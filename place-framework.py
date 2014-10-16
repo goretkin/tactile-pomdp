@@ -28,6 +28,40 @@ import pygame
 
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon as mplPolygon
+import matplotlib as mpl
+
+class ForceSensor:
+    def __init__(self,body,hand):
+        self.body = body
+        self.hand = hand
+        self.k = .5
+        self.kt = .5
+        body.world.CreateWeldJoint(bodyA=body,bodyB=hand)
+
+    def solve(self):
+        pass
+        d = self.body.position - self.hand.position
+        f = d * self.k
+
+        #self.body.ApplyForceToCenter(-f,True)
+        #self.hand.ApplyForceToCenter(f,True)
+
+        self.body.ApplyLinearImpulse(-f,self.body.position,True)
+        self.hand.ApplyLinearImpulse(f,self.hand.position,True)
+
+        self.f = f
+
+        da = self.body.angle - self.hand.angle
+        t = da * self.kt
+
+#        self.body.ApplyTorque(-t,True)
+#        self.hand.ApplyTorque(t,True)
+        
+        self.body.ApplyAngularImpulse(-t,True)
+        self.hand.ApplyAngularImpulse(t,True)
+
+        self.t = t
+
 
 class AngleJoint:
     def __init__(self,revolute_joint):
@@ -41,7 +75,7 @@ class AngleJoint:
         self.revolute_joint.maxMotorTorque = 3000.0
         self.revolute_joint.motorEnabled = True
         #grasp_body.angularDamping = 30.0
-        self.revolute_joint.motorSpeed = (err) * (-4.0) + self.controlled_body.angularVelocity * (-0.0)
+        self.revolute_joint.motorSpeed = (err) * (-3.0) + self.controlled_body.angularVelocity * (0.0)
 
 def mpl_plot_b2Body(ax,body,mpl_kwargs={}):
     vertices = [tuple(body.transform*v) for v in body.fixtures[0].shape.vertices]
@@ -68,24 +102,38 @@ class Filter():
         self.simulator = simulator
         self.world_dynamics=world_dynamics
 
+        #closely related to observation. like they're the same things.
+        self.lin_impulse_warmstart = [(0,0)] * self.n_particles
+        self.ang_impulse_warmstart = [0] * self.n_particles
+
         for i in range(self.n_particles):
             t = self.simulator.sample_manipuland_in_hand()
             self.particles[i,0:2] = t.position
             self.particles[i,2] = t.angle
 
         self.sim_timeStep = 1.0/60.0
-        self.sim_velocityIterations = 500
-        self.sim_positionIterations = 500
+        self.sim_velocityIterations = 100
+        self.sim_positionIterations = 100
 
-    def plot(self):
-        fig = plt.gcf()
-        ax = fig.add_subplot(111, aspect='equal')
+        self.observations_made = 0
+
+    def plot(self,fig=None):
+        if fig is None:
+            fig = plt.gcf()
+        ax = fig.add_subplot(121, aspect='equal')
+        ax_obs = fig.add_subplot(122, aspect='equal')
+
         mpl_plot_b2Body(ax,self.simulator.ground_body)
         ax.plot(self.particles[:,0],self.particles[:,1],'o',alpha=.5)
+        
+        ax_obs.set_xlim(-1,1)
+        ax_obs.set_ylim(-1,1)
 
         for i in range(self.n_particles):
             pos = self.particles[i,0:2]
             ang = self.particles[i,2]
+
+
 
             t = Box2D.b2Transform(pos,Box2D.b2Rot(ang))
 
@@ -96,6 +144,9 @@ class Filter():
             x2,y2 = self.particles[i,0:2] + 1.0 * self.observation[i,0:2]
 
             ax.plot([x1,x2],[y1,y2], 'y-', alpha=0.5)
+
+            x,y = self.observation[i,0:2]
+            ax_obs.plot([0,x],[0,y],'y-',alpha=0.5)
 
         mpl_plot_b2Body(ax,self.simulator.grasp_body,{'alpha':0.3,'facecolor':'red'})
         x,y = self.simulator.grasp_body.position
@@ -111,6 +162,35 @@ class Filter():
                 c += 1
         return c
 
+    def observe(self):
+        if self.world_dynamics.grasp_slip_joint is None:
+            #we have no object in our hand. 
+            return
+
+        self.observations_made +=1
+        this_obs = np.zeros((3,))
+
+        this_obs[0:2] = self.world_dynamics.grasp_slip_joint.GetReactionForce(1.0)
+        this_obs[2] = self.world_dynamics.grasp_slip_joint.GetReactionTorque(1.0)
+
+        force_diff = self.observation[:,0:2]-this_obs[0:2]
+
+        d = np.sum(force_diff**2,axis=1)**(.5)
+        reweight = np.exp(1e-1 *  (-d)) 
+        print reweight
+        self.weights *= reweight
+
+        #we already have a function for cleaning up of particles.
+        particle_out_of_hand = np.isnan(reweight)
+        self.weights[particle_out_of_hand] = 0
+
+        s = np.sum(self.weights)
+
+        if s<1e-6 or np.isnan(s):
+            print ('Not updating weights. Weights sum to: %f'%(s))
+        else:
+            self.weights /= np.sum(self.weights)
+
     def apply_transition(self):
         for i in range(self.n_particles):
             self.simulator.grasp_body.linearVelocity = self.world_dynamics.grasp_body.linearVelocity.__copy__()
@@ -125,6 +205,13 @@ class Filter():
             self.simulator.manipuland_body.angle = self.particles[i,2]
 
             self.simulator.create_grasp_slip_joint()
+            
+            if True:
+                self.simulator.grasp_slip_joint.SetColdStartLinearImpulse(self.lin_impulse_warmstart[i])
+                self.simulator.grasp_slip_joint.SetColdStartAngularImpulse(self.ang_impulse_warmstart[i])
+            else:
+                self.simulator.grasp_slip_joint.SetColdStartAngularImpulse(0.0)
+                self.simulator.grasp_slip_joint.SetColdStartLinearImpulse((0.0,0.0))
 
             self.simulator.step_grasp() #we might find that the manipuland is no longer in the hand.
 
@@ -139,12 +226,16 @@ class Filter():
             if self.simulator.grasp_slip_joint:
                 self.observation[i,0:2] = self.simulator.grasp_slip_joint.GetReactionForce(1.0)
                 self.observation[i,2] = self.simulator.grasp_slip_joint.GetReactionTorque(1.0)
+
+                #assuming fixed time step of filter box2d world
+                self.lin_impulse_warmstart[i] = tuple(self.simulator.grasp_slip_joint.GetLinearImpulse())
+                self.ang_impulse_warmstart[i] = self.simulator.grasp_slip_joint.GetAngularImpulse()
+
             else:
                 self.observation[i,:] = np.nan
 
-
-
-
+                self.lin_impulse_warmstart[i] = (0,0)
+                self.ang_impulse_warmstart[i] = 0
 
 
 class Dynamics():
@@ -152,8 +243,7 @@ class Dynamics():
         self.gripper_direct_control = gripper_direct_control
 
         if world is None:
-            self.world = Box2D.b2World(gravity=(0,-10), doSleep=True)
-            self.world.warmStarting = False
+            self.world = Box2D.b2World(gravity=(0,-100), doSleep=True)
         else:
             self.world = world
 
@@ -168,6 +258,15 @@ class Dynamics():
 
         self.grasp_pivot_body = self.world.CreateDynamicBody(position=(0.0,5.0))
         self.grasp_pivot_body.fixedRotation = True
+
+        self.use_force_torque = False
+        self.ft_sensor = None
+
+
+        if self.use_force_torque:
+            self.grasp_body_before_ft = self.world.CreateDynamicBody(position=(0.0,5.0), angle=0.0)
+            self.grasp_fixture_before_ft = self.grasp_body_before_ft.CreatePolygonFixture(box=(.1,.1), density=1.0) #density is required so that torques make the body rotate.
+            self.grasp_fixture_before_ft.sensor = True #it doesn't collide with anything
 
         self.grasp_body = self.world.CreateDynamicBody(position=(0.0,5.0), angle=0.0)
         self.grasp_fixture = self.grasp_body.CreatePolygonFixture(box=(.2,.2), density=1.0) #density is required so that torques make the body rotate.
@@ -197,8 +296,12 @@ class Dynamics():
 
             self.grasp_pivot_joint = self.world.CreateRevoluteJoint(
                 bodyA=self.grasp_pivot_body,
-                bodyB=self.grasp_body,
+                bodyB=self.grasp_body_before_ft if self.use_force_torque else self.grasp_body,
                 anchor=self.grasp_pivot_body.worldCenter)
+
+            if self.use_force_torque:
+                self.ft_sensor = ForceSensor(self.grasp_body_before_ft,self.grasp_body)
+                
 
             self.gripper_rotation_control = AngleJoint(self.grasp_pivot_joint)
 
@@ -354,8 +457,81 @@ class Dynamics():
         self.grasp_slip_joint = a
 
     def destroy_grasp_slip_joint(self):
-        self.world.DestroyJoint(self.grasp_slip_joint)
-        self.grasp_slip_joint = None
+        if not self.grasp_slip_joint is None:
+            self.world.DestroyJoint(self.grasp_slip_joint)
+            self.grasp_slip_joint = None
+
+
+    def get_simulation_state(self):
+        ss = Blank()
+        ss.grasp_body = Blank()
+
+        ss.grasp_body.linearVelocity = tuple(self.grasp_body.linearVelocity)
+        ss.grasp_body.angularVelocity = self.grasp_body.angularVelocity
+        ss.grasp_body.position = tuple(self.grasp_body.position)
+        ss.grasp_body.angle = self.grasp_body.angle
+
+        ss.manipuland_body = Blank()
+
+        ss.manipuland_body.linearVelocity = tuple(self.manipuland_body.linearVelocity)
+        ss.manipuland_body.angularVelocity = self.manipuland_body.angularVelocity
+        ss.manipuland_body.position = tuple(self.manipuland_body.position)
+        ss.manipuland_body.angle = self.manipuland_body.angle
+
+        if self.grasp_slip_joint:
+            ss.grasp_slip_joint = Blank()
+                
+            #assuming fixed time step of filter box2d world
+            ss.grasp_slip_joint.linearImpulse = tuple(self.grasp_slip_joint.GetLinearImpulse())
+            ss.grasp_slip_joint.angularImpuse = self.grasp_slip_joint.GetAngularImpulse()
+        else:
+            ss.grasp_slip_joint = None
+
+        return ss
+
+    def restore_simulation_state(self,ss):
+        self.grasp_body.linearVelocity = ss.grasp_body.linearVelocity
+        self.grasp_body.angularVelocity = ss.grasp_body.angularVelocity
+        self.grasp_body.position = ss.grasp_body.position
+        self.grasp_body.angle = ss.grasp_body.angle
+
+
+        self.manipuland_body.linearVelocity = ss.manipuland_body.linearVelocity
+        self.manipuland_body.angularVelocity = ss.manipuland_body.angularVelocity
+        self.manipuland_body.position = ss.manipuland_body.position
+        self.manipuland_body.angle = ss.manipuland_body.angle
+
+        if ss.grasp_slip_joint:
+            if not self.grasp_slip_joint:
+                self.create_grasp_slip_joint()
+
+            #assuming fixed time step of filter box2d world
+            self.grasp_slip_joint.SetColdStartLinearImpulse(ss.grasp_slip_joint.linearImpulse)
+            self.grasp_slip_joint.SetColdStartAngularImpulse(ss.grasp_slip_joint.angularImpuse)
+        else:
+            self.destroy_grasp_slip_joint()
+
+    def clear_simulation_state(self):
+        self.grasp_body.linearVelocity = (0,0)
+        self.grasp_body.angularVelocity = 0
+        self.grasp_body.position = (0,0)
+        self.grasp_body.angle = 0
+
+
+        self.manipuland_body.linearVelocity = (0,0)
+        self.manipuland_body.angularVelocity = 0
+        self.manipuland_body.position = (0,0)
+        self.manipuland_body.angle = 0
+
+        if self.grasp_slip_joint:
+            self.destroy_grasp_slip_joint()
+            self.create_grasp_slip_joint()
+
+            #self.grasp_slip_joint.SetColdStartLinearImpulse((0,0))
+            #self.grasp_slip_joint.SetColdStartAngularImpulse(0.0)
+
+class Blank(object):
+    pass
 
 
 class Empty(Framework):
@@ -371,14 +547,21 @@ class Empty(Framework):
         """
         super(Empty, self).__init__()
 
-        self.dynamics = Dynamics(world=self.world,gripper_direct_control=False)
-
+        self.install_dynamics()
 
         self.memory = {}
 
-        # x,y,theta,vx,vy,omega
-        self.particles = np.zeros((100,6))
+        self.clean_world = True #totally wipe out the world and reset simulator state each step
+        self.last_simulation_state = None
 
+        self.render_callback = None
+
+        self.settingsLocal = None
+        self.singleStepLocal = False
+
+    def install_dynamics(self):
+        #will write over existing dynamics if any.
+        self.dynamics = Dynamics(world=self.world, gripper_direct_control=True)
 
 
     def Keyboard(self, key):
@@ -389,20 +572,34 @@ class Empty(Framework):
 
         keymove = {Keys.K_w:(0,0.05),Keys.K_s:(0,-0.05),Keys.K_a:(-0.05,0),Keys.K_d:(0.05,0)}
 
+
         if key in keymove:
             dx,dy = keymove[key]
-            self.dynamics.gripper_translation_control.target += (dx,dy)
-        
+            
+            if not self.dynamics.gripper_direct_control:                
+                self.dynamics.gripper_translation_control.target += (dx,dy)
+            else:
+                self.dynamics.grasp_body.linearVelocity += b2Vec2(dx,dy)
+                #p = self.dynamics.grasp_body.position 
+                #self.dynamics.grasp_body.ApplyLinearImpulse((5*dx,5*dy),p,True)
+
         elif key == Keys.K_g:
             if self.dynamics.grasp_slip_joint is None:
                 self.dynamics.create_grasp_slip_joint() 
             else:
                 self.dynamics.destroy_grasp_slip_joint()
 
-        elif key == Keys.K_q:
-            self.dynamics.gripper_rotation_control.target += .1
-        elif key == Keys.K_e:
-            self.dynamics.gripper_rotation_control.target -= .1
+        elif key in [Keys.K_q, Keys.K_e]:
+            s = +1 if key==Keys.K_q else -1
+
+            if not self.dynamics.gripper_direct_control:
+                self.dynamics.gripper_rotation_control.target += .1 * s
+            else:
+                self.dynamics.grasp_body.angularVelocity += .1 * s
+        
+        elif key == Keys.K_b:
+            self.dynamics.grasp_body.linearVelocity = b2Vec2(0,0)
+            self.dynamics.grasp_body.angularVelocity = 0
 
         body_store = [self.dynamics.manipuland_body]
         #body_store = self.world.bodies
@@ -432,6 +629,7 @@ class Empty(Framework):
                 self.dynamics.grasp_slip_joint.SetLinearImpulse( self.memory['grasp_slip_lin'])
                 self.dynamics.grasp_slip_joint.SetAngularImpulse( self.memory['grasp_slip_ang'])
 
+
         elif key == Keys.K_t:
             if self.dynamics.grasp_slip_joint is not None:
                 self.dynamics.grasp_slip_joint.SetAngularImpulse(.5)
@@ -455,13 +653,34 @@ class Empty(Framework):
         If placed at the beginning, it will cause the actual physics step to happen first.
         If placed at the end, it will cause the physics step to happen after your code.
         """
-
         phy2pix = self.world.renderer.to_screen
-        timeStep = 1.0/settings.hz
+        timeStep = 1.0/settings.hz #might not be the actual time step.
+
+        self.last_simulation_state = self.dynamics.get_simulation_state()
+        
+        self.settingsLocal = settings
+        self.singleStepLocal = settings.singleStep
+
+        if self.clean_world and not self.last_simulation_state is None:
+            #self.world = Box2D.b2World(gravity=(0,-100), doSleep=True)
+            #self.install_dynamics()
+            self.dynamics.clear_simulation_state()
+
+            if False:
+                for i in range(10):
+                    self.world.Step(timeStep, 10, 10)
+                    self.world.ClearForces()
+
+            self.dynamics.restore_simulation_state(self.last_simulation_state)
+
+
 
         if not self.dynamics.gripper_direct_control:
             self.dynamics.gripper_rotation_control.solve()
         self.dynamics.step_grasp()
+        
+        if self.dynamics.ft_sensor:
+            self.dynamics.ft_sensor.solve()
 
         #t = self.dynamics.sample_manipuland_in_hand()
 
@@ -523,6 +742,8 @@ class Empty(Framework):
                 b2Color(.5,.5,0)
                 )
 
+
+
         def add(a,b):
             return tuple( [x+y for (x,y) in zip(a,b)] )
 
@@ -549,6 +770,9 @@ class Empty(Framework):
                 b2Color(0,1,1),
                 )
 
+        if self.render_callback:
+            self.render_callback(self,settings)
+
         # Placed after the physics step, it will draw on top of physics objects
         self.Print("*** Base your own testbeds on me! ***")
 
@@ -570,10 +794,11 @@ class Empty(Framework):
 if __name__=="__main__":
     #main(Empty)
     domain = Empty()
-    #domain.settings.enableWarmStarting=False
     domain.setCenter(domain.dynamics.manipuland_body.worldCenter)
     #domain.run()
     domain.run_init()
+
+
 
     d = domain.dynamics
     s = Dynamics(gripper_direct_control=True)
@@ -587,8 +812,83 @@ if __name__=="__main__":
             return False
 
 
+    class HookupFilter():
+        def __init__(self,f):
+            self.f = f
+        def callback(self,selfdomain,settings):
+            f = self.f
+            d = selfdomain
+
+
+            c = b2Vec2(350,400) #center of drawing 
+            phy2pix = d.renderer.to_screen
+
+            plot_thresh = np.max(f.weights) * float(settings.particlePlotThresh) / 100.0
+
+            for i in range(f.n_particles):
+                if  np.isnan( f.observation[i,0] ): 
+                    continue; #don't plot blocks that have fallen out of hand.
+
+                if f.weights[i] < plot_thresh:
+                    continue;
+
+
+                pos = f.particles[i,0:2] - d.dynamics.grasp_body.position
+
+
+                T = b2Transform(
+                    pos,
+                    b2Rot(f.particles[i,2])
+                    )
+
+                vertices = np.array( [tuple(T*v) for v in d.dynamics.manipuland_body.fixtures[0].shape.vertices] ) 
+
+                vertices *= d.renderer.zoom
+
+                vertices += c
+                
+                if d.renderer.flipX:
+                    vertices[:,0] = d.renderer.screenSize.x - vertices[:,0]
+
+                if d.renderer.flipY:
+                    vertices[:,1] = d.renderer.screenSize.y - vertices[:,1]
+
+                vertices = list(vertices)
+                d.renderer.DrawPolygon(vertices,b2Color(0,1,1))
+
+
+            def flip(p):
+                (x,y) = p
+                if d.renderer.flipX:
+                    x = d.renderer.screenSize.x - x
+
+                if d.renderer.flipY:
+                    y = d.renderer.screenSize.y - y
+                
+                return (x,y)
+
+
+            for i in range(f.n_particles):
+                if not f.observation[i,0] == np.nan:
+                    force = f.observation[i,0:2]
+
+                    d.renderer.DrawSegment(flip(c),
+                        flip(c+(force * 75)),
+                    b2Color(1,1,0)
+                    )
+
+
+
+
+            d.Print('N particles plot: %d'%(np.sum(1-np.isnan(f.observation[:,0])))  )
+            d.Print('Plot Thresh: %f'%(plot_thresh) )
+            d.Print('Num Obs: %d'%(f.observations_made))
+
+    domain.render_callback = HookupFilter(f).callback
+
     from inputhookpygame import PyGame_InputHook
 
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
 
     if False or not run_from_ipython():
         while domain.running:
@@ -601,11 +901,39 @@ if __name__=="__main__":
 
         #old_hook = inputhook.clear_inputhook()
         #print old_hook
-
+stereographic.texp
+        i_ugh = 0
         def step():
+            global i_ugh
             #old_hook()
             domain.run_step()
+
+            if domain.settingsLocal.pause:
+                if hasattr(domain.settings,'external_singleStep') and domain.settings.external_singleStep :
+                    domain.settings.external_singleStep = False
+                    print('Taking a Paused Step')
+                else:
+                    return
+
             f.apply_transition()
+            
+            if not domain.settingsLocal.blindFilter:
+                if np.linalg.norm(d.grasp_body.linearVelocity) > .02 or np.abs(d.grasp_body.angularVelocity) > .01:
+                    print ('make observation')
+                    f.observe()
+
+
+            if i_ugh<0:
+                fig = mpl.figure.Figure()
+
+                f.plot(fig)
+
+                canvas = FigureCanvasAgg(fig)
+                fig.set_canvas(canvas)  #not sure this line is strictly necessary
+                fig.savefig('debug%04d.png'%(i_ugh))
+                i_ugh += 1
+
+
             return domain.running
 
         pyih = PyGame_InputHook(step)
