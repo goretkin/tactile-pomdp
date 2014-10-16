@@ -1,0 +1,10 @@
+Using setuptools (version 0.6).
+running build
+running build_py
+copying library/Box2D/__init__.py -> build/lib.macosx-10.6-x86_64-2.7/Box2D
+copying library/Box2D/Box2D.py -> build/lib.macosx-10.6-x86_64-2.7/Box2D
+running build_ext
+building 'Box2D._Box2D' extension
+swigging Box2D/Box2D.i to Box2D/Box2D_wrap.cpp
+swig -python -c++ -IBox2D -small -O -includeall -ignoremissing -w201 -globals b2Globals -outdir library/Box2D -keyword -w511 -D_SWIG_KWARGS -o Box2D/Box2D_wrap.cpp Box2D/Box2D.i
+gcc -fno-strict-aliasing -fno-common -dynamic -arch x86_64 -DNDEBUG -g -O3 -I/tmp/_py/libraries/usr/local/include -arch x86_64 -I/Applications/Canopy.app/appdata/canopy-1.3.0.1715.macosx-x86_64/Canopy.app/Contents/include/python2.7 -c Box2D/Box2D_wrap.cpp -o build/temp.macosx-10.6-x86_64-2.7/Box2D/Box2D_wrap.o -I. -Wno-unused
