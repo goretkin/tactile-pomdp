@@ -752,11 +752,12 @@ class Empty(Framework):
 
             #plot a coil to show the torque
             torque = self.dynamics.grasp_slip_joint.GetReactionTorque(timeStep)
-            torque *= 400
-            s = np.linspace(0,torque,int(50*abs(torque)))
+            torque *= 1000
+            n_spiral_pieces = int(50*abs(torque))
+            s = np.linspace(0,torque,n_spiral_pieces) 
 
             if len(s) > 1:
-                r = (30 + 3*s)
+                r = (1 + 0.1*s)
                 u = np.c_[np.cos(s),np.sin(s)]
                 xy = u * r[:,None] #add a singleton index to broadcast correctly
 
@@ -835,6 +836,7 @@ if __name__=="__main__":
     #main(Empty)
     domain = Empty()
     domain.setCenter(domain.dynamics.manipuland_body.worldCenter)
+    domain.setZoom(50.0)
     domain.run()
     #domain.run_init()
 
