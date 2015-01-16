@@ -27,6 +27,7 @@ class fwSettings(object):
     particlePlotThresh = 90
 
     blindFilter = False
+    plotParticlesTrueCoordinates = True
 
     # Physics options
     hz=60.0
@@ -75,6 +76,7 @@ checkboxes =( ("Warm Starting"   , "enableWarmStarting"),
               ("Pause"           , "pause"),
               ("Single Step"     , "singleStep"),
               ("Blind Filter"    , "blindFilter"),
+              ("Plot Part. Coord", "plotParticlesTrueCoordinates")
             )
           
 

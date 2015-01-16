@@ -96,15 +96,21 @@ class Filter():
 
         self.particles = np.zeros(shape=(self.n_particles,6))
         self.weights = np.ones(shape=(self.n_particles,)) * 1.0/self.n_particles
-        
         self.observation = np.zeros(shape=(self.n_particles,3))
+
+       #closely related to observation. like they're the same things.
+        self.lin_impulse_warmstart = [(0,0)] * self.n_particles
+        self.ang_impulse_warmstart = [0] * self.n_particles
+
+        self.holding_object = np.ones(shape=(self.n_particles,), dtype=np.bool)
+        #if Filter is used for planning, need to consider different hand states
+        #pos_x,pos_y,angle,vel_x,vel_y,angvel
+        self.hand_state = np.zeros(shape=(self.n_particles,6))
 
         self.simulator = simulator
         self.world_dynamics=world_dynamics
 
-        #closely related to observation. like they're the same things.
-        self.lin_impulse_warmstart = [(0,0)] * self.n_particles
-        self.ang_impulse_warmstart = [0] * self.n_particles
+ 
 
         for i in range(self.n_particles):
             t = self.simulator.sample_manipuland_in_hand()
@@ -116,6 +122,28 @@ class Filter():
         self.sim_positionIterations = 100
 
         self.observations_made = 0
+        self.resamplings_made = 0
+
+    def resample(self):
+        cumweights = np.cumsum(self.weights)
+        start = 1.0/self.n_particles * np.random.rand()
+        points = start + np.linspace(0,1,self.n_particles,False)
+        assert points[-1] < 1
+        assert len(points) == self.n_particles
+
+        sampled_idx = np.searchsorted(cumweights,points)
+
+
+        self.particles = self.particles[sampled_idx,:] 
+        self.weights = self.weights[sampled_idx,:] 
+        self.observation = self.observation[sampled_idx,:] 
+
+        self.lin_impulse_warmstart = [ self.lin_impulse_warmstart[i] for i in sampled_idx ]
+        self.ang_impulse_warmstart = [ self.ang_impulse_warmstart[i] for i in sampled_idx ]
+
+        self.holding_object = self.holding_object[sampled_idx]
+        self.hand_state = self.hand_state[sampled_idx,:]
+
 
     def plot(self,fig=None):
         if fig is None:
@@ -132,8 +160,6 @@ class Filter():
         for i in range(self.n_particles):
             pos = self.particles[i,0:2]
             ang = self.particles[i,2]
-
-
 
             t = Box2D.b2Transform(pos,Box2D.b2Rot(ang))
 
@@ -188,8 +214,9 @@ class Filter():
 
         if s<1e-6 or np.isnan(s):
             print ('Not updating weights. Weights sum to: %f'%(s))
+            self.weights = 1.0/self.n_particles
         else:
-            self.weights /= np.sum(self.weights)
+            self.weights /= s
 
     def apply_transition(self):
         for i in range(self.n_particles):
@@ -318,6 +345,10 @@ class Dynamics():
         self.grasp_center = None
 
         self.sample_manipuland_in_hand_rejection_iterations = None
+
+    def guarded_move(self,velocity):
+        pass
+        
 
     def update_sample_manipuland_in_hand_rejection(self,iterations):
         if self.sample_manipuland_in_hand_rejection_iterations is None:
@@ -832,26 +863,30 @@ if __name__=="__main__":
                 if f.weights[i] < plot_thresh:
                     continue;
 
-
-                pos = f.particles[i,0:2] - d.dynamics.grasp_body.position
-
+                if not settings.plotParticlesTrueCoordinates:
+                    pos = f.particles[i,0:2] - d.dynamics.grasp_body.position
+                else:
+                    pos = f.particles[i,0:2]
 
                 T = b2Transform(
                     pos,
                     b2Rot(f.particles[i,2])
                     )
 
-                vertices = np.array( [tuple(T*v) for v in d.dynamics.manipuland_body.fixtures[0].shape.vertices] ) 
+                if not settings.plotParticlesTrueCoordinates:
+                    vertices = np.array( [tuple(T*v) for v in d.dynamics.manipuland_body.fixtures[0].shape.vertices] ) 
 
-                vertices *= d.renderer.zoom
-
-                vertices += c
+                    vertices *= d.renderer.zoom
+                    vertices += c
                 
-                if d.renderer.flipX:
-                    vertices[:,0] = d.renderer.screenSize.x - vertices[:,0]
+                    if d.renderer.flipX:
+                        vertices[:,0] = d.renderer.screenSize.x - vertices[:,0]
 
-                if d.renderer.flipY:
-                    vertices[:,1] = d.renderer.screenSize.y - vertices[:,1]
+                    if d.renderer.flipY:
+                        vertices[:,1] = d.renderer.screenSize.y - vertices[:,1]
+                else:
+                    vertices = np.array( [d.renderer.to_screen(tuple(T*v)) for v in d.dynamics.manipuland_body.fixtures[0].shape.vertices] ) 
+
 
                 vertices = list(vertices)
                 d.renderer.DrawPolygon(vertices,b2Color(0,1,1))
@@ -901,7 +936,7 @@ if __name__=="__main__":
 
         #old_hook = inputhook.clear_inputhook()
         #print old_hook
-stereographic.texp
+
         i_ugh = 0
         def step():
             global i_ugh
