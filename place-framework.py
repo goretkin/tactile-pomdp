@@ -24,7 +24,6 @@ from framework import *
 
 import numpy as np
 import random
-import pygame
 
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon as mplPolygon
@@ -203,7 +202,7 @@ class Filter():
 
         d = np.sum(force_diff**2,axis=1)**(.5)
         reweight = np.exp(1e-1 *  (-d)) 
-        print reweight
+        print(reweight)
         self.weights *= reweight
 
         #we already have a function for cleaning up of particles.
@@ -213,7 +212,7 @@ class Filter():
         s = np.sum(self.weights)
 
         if s<1e-6 or np.isnan(s):
-            print ('Not updating weights. Weights sum to: %f'%(s))
+            print(('Not updating weights. Weights sum to: %f'%(s)))
             self.weights = 1.0/self.n_particles
         else:
             self.weights /= s
@@ -431,7 +430,7 @@ class Dynamics():
 
         delta = (aabb.upperBound - aabb.lowerBound)
 
-        for i in xrange(1000):
+        for i in range(1000):
             xy = aabb.lowerBound +  (delta[0] * random.random(), delta[1] * random.random())
             theta = Box2D.b2Rot(random.random() * 2*np.pi)
 
@@ -654,7 +653,7 @@ class Empty(Framework):
                     body.angle = self.memory[body]['angle']
                     body.angularVelocity = self.memory[body]['angvel']
                 else:
-                    print 'not in memory: ', body
+                    print('not in memory: ', body)
 
             if self.dynamics.grasp_slip_joint is not None:
                 self.dynamics.grasp_slip_joint.SetLinearImpulse( self.memory['grasp_slip_lin'])
@@ -684,7 +683,9 @@ class Empty(Framework):
         If placed at the beginning, it will cause the actual physics step to happen first.
         If placed at the end, it will cause the physics step to happen after your code.
         """
-        phy2pix = self.world.renderer.to_screen
+        if self.renderer:
+            phy2pix = self.renderer.to_screen
+
         timeStep = 1.0/settings.hz #might not be the actual time step.
 
         self.last_simulation_state = self.dynamics.get_simulation_state()
@@ -738,17 +739,19 @@ class Empty(Framework):
             c = self.dynamics.grasp_slip_joint.anchorA #or anchorB
             c = self.dynamics.grasp_center
             force = self.dynamics.grasp_slip_joint.GetReactionForce(timeStep)
-            self.renderer.DrawPoint(phy2pix(c), 
-                            2, b2Color(1,0,0) ) 
+
+            if self.renderer:
+                self.renderer.DrawPoint(phy2pix(c), 
+                                2, b2Color(1,0,0) ) 
 
 
-            self.renderer.DrawSegment(phy2pix(c),
-                phy2pix(c + force * 50),
-                b2Color(1,1,0)
-                )
+                self.renderer.DrawSegment(phy2pix(c),
+                    phy2pix(c + force * 50),
+                    b2Color(1,1,0)
+                    )
 
+            #plot a coil to show the torque
             torque = self.dynamics.grasp_slip_joint.GetReactionTorque(timeStep)
-
             torque *= 400
             s = np.linspace(0,torque,int(50*abs(torque)))
 
@@ -757,21 +760,25 @@ class Empty(Framework):
                 u = np.c_[np.cos(s),np.sin(s)]
                 xy = u * r[:,None] #add a singleton index to broadcast correctly
 
+                torque_color = (1,0,0) if torque >0 else (0,1,0)
                 xy += phy2pix(c)
-                torque_color = (255,0,0,127) if torque >0 else (0,255,0,127)
-                pygame.draw.lines(self.world.renderer.surface,
-                    torque_color,
-                    False, #not closed
-                    xy, #point list
-                    1) #width
+                self.renderer.DrawPolygon(xy,b2Color(*torque_color))
+
+                if False: 
+                    pygame.draw.lines(self.renderer.surface,
+                        torque_color,
+                        False, #not closed
+                        xy, #point list
+                        1) #width
 
         #draw manipuland velocity
         c = self.dynamics.manipuland_body.position
 
-        self.renderer.DrawSegment(phy2pix(c),
-                phy2pix(c + .2 * self.dynamics.manipuland_body.linearVelocity ),
-                b2Color(.5,.5,0)
-                )
+        if self.renderer: 
+            self.renderer.DrawSegment(phy2pix(c),
+                    phy2pix(c + .2 * self.dynamics.manipuland_body.linearVelocity ),
+                    b2Color(.5,.5,0)
+                    )
 
 
 
@@ -783,23 +790,25 @@ class Empty(Framework):
 
         #draw gripper setpoint
         if not self.dynamics.gripper_direct_control:
-            self.world.renderer.DrawCircle(phy2pix(self.dynamics.gripper_translation_control.target),
-                10.0/self.world.renderer.zoom,
-                b2Color(1,1,1),
-                )
+            if self.renderer: 
+                self.renderer.DrawCircle(phy2pix(self.dynamics.gripper_translation_control.target),
+                    10.0/self.world.renderer.zoom,
+                    b2Color(1,1,1),
+                    )
 
 
 
             r = 10.0
             a = self.dynamics.gripper_rotation_control.target
-            self.world.renderer.DrawCircle(
-                vint(add(
-                    phy2pix(self.dynamics.gripper_translation_control.target),
-                    (r*np.cos(-a), r*np.sin(-a)) 
-                    )),
-                3.0/self.world.renderer.zoom,
-                b2Color(0,1,1),
-                )
+            if self.renderer:
+                self.renderer.DrawCircle(
+                    vint(add(
+                        phy2pix(self.dynamics.gripper_translation_control.target),
+                        (r*np.cos(-a), r*np.sin(-a)) 
+                        )),
+                    3.0/self.world.renderer.zoom,
+                    b2Color(0,1,1),
+                    )
 
         if self.render_callback:
             self.render_callback(self,settings)
@@ -826,8 +835,8 @@ if __name__=="__main__":
     #main(Empty)
     domain = Empty()
     domain.setCenter(domain.dynamics.manipuland_body.worldCenter)
-    #domain.run()
-    domain.run_init()
+    domain.run()
+    #domain.run_init()
 
 
 
@@ -920,60 +929,5 @@ if __name__=="__main__":
             d.Print('Num Obs: %d'%(f.observations_made))
 
     domain.render_callback = HookupFilter(f).callback
-
-    from inputhookpygame import PyGame_InputHook
-
-    from matplotlib.backends.backend_agg import FigureCanvasAgg
-
-    if False or not run_from_ipython():
-        while domain.running:
-            domain.run_step()
-            f.apply_transition()
-    else:
-        from IPython.lib import inputhook
-
-        #ihm = inputhook.InputHookManager()
-
-        #old_hook = inputhook.clear_inputhook()
-        #print old_hook
-
-        i_ugh = 0
-        def step():
-            global i_ugh
-            #old_hook()
-            domain.run_step()
-
-            if domain.settingsLocal.pause:
-                if hasattr(domain.settings,'external_singleStep') and domain.settings.external_singleStep :
-                    domain.settings.external_singleStep = False
-                    print('Taking a Paused Step')
-                else:
-                    return
-
-            f.apply_transition()
-            
-            if not domain.settingsLocal.blindFilter:
-                if np.linalg.norm(d.grasp_body.linearVelocity) > .02 or np.abs(d.grasp_body.angularVelocity) > .01:
-                    print ('make observation')
-                    f.observe()
-
-
-            if i_ugh<0:
-                fig = mpl.figure.Figure()
-
-                f.plot(fig)
-
-                canvas = FigureCanvasAgg(fig)
-                fig.set_canvas(canvas)  #not sure this line is strictly necessary
-                fig.savefig('debug%04d.png'%(i_ugh))
-                i_ugh += 1
-
-
-            return domain.running
-
-        pyih = PyGame_InputHook(step)
-
-        inputhook.set_inputhook(pyih.inputhook_pygame)
-
 
 

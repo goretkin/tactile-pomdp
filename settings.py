@@ -21,7 +21,7 @@
 # 3. This notice may not be removed or altered from any source distribution.
 
 class fwSettings(object):
-    backend='pygame'        # The default backend to use in (can be: pyglet, pygame, etc.)
+    backend='pyqt4'        # The default backend to use in (can be: pyglet, pygame, etc.)
 
     #how many of the particles to plot (out of 100)
     particlePlotThresh = 90
