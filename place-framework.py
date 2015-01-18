@@ -763,7 +763,7 @@ class Empty(Framework):
 
                 torque_color = (1,0,0) if torque >0 else (0,1,0)
                 xy += phy2pix(c)
-                self.renderer.DrawPolygon(xy,b2Color(*torque_color))
+                self.renderer.DrawPolygon(xy,b2Color(*torque_color),closed=False)
 
                 if False: 
                     pygame.draw.lines(self.renderer.surface,

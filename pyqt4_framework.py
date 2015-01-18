@@ -165,7 +165,7 @@ class Pyqt4Draw(object):
         self.temp_items.append(ellipse)
         self.temp_items.append(line)
 
-    def DrawPolygon(self, vertices, color, shape=None):
+    def DrawPolygon(self, vertices, color, shape=None, closed=True):
         """
         Draw a wireframe polygon given the world vertices vertices (tuples) with the specified color.
         """
@@ -175,8 +175,16 @@ class Pyqt4Draw(object):
         for v in vertices:
             poly+=QtCore.QPointF(*v)
 
-        item=self.scene.addPolygon(poly, pen=pen)
-        self.temp_items.append(item)
+        if closed:
+            item=self.scene.addPolygon(poly, pen=pen)
+            self.temp_items.append(item)
+        else:
+            path=QtGui.QPainterPath()
+            path.addPolygon(poly)
+            #contour=QtGui.QGraphicsPathItem(path)
+            #contour.setPen(pen)
+            item=self.scene.addPath(path, pen=pen)
+            self.temp_items.append(item)
 
     def DrawSolidPolygon(self, vertices, color, shape=None):
         """
