@@ -753,12 +753,16 @@ class Empty(Framework):
             #plot a coil to show the torque
             torque = self.dynamics.grasp_slip_joint.GetReactionTorque(timeStep)
             torque *= 1000
-            n_spiral_pieces = int(50*abs(torque))
-            s = np.linspace(0,torque,n_spiral_pieces) 
+
+            mag_torque = np.abs(torque)
+            sign_torque = np.sign(torque)
+
+            n_spiral_pieces = int(50*mag_torque)
+            s = np.linspace(0,mag_torque,n_spiral_pieces) 
 
             if len(s) > 1:
-                r = (1 + 0.1*s)
-                u = np.c_[np.cos(s),np.sin(s)]
+                r = (0.1*s)
+                u = np.c_[np.cos(sign_torque*s),np.sin(sign_torque*s)]
                 xy = u * r[:,None] #add a singleton index to broadcast correctly
 
                 torque_color = (1,0,0) if torque >0 else (0,1,0)
