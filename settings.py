@@ -28,6 +28,8 @@ class fwSettings(object):
 
     blindFilter = False
     plotParticlesTrueCoordinates = True
+    hideManipulandum = False
+    sampleRandomManipulandum = False
 
     # Physics options
     hz=60.0
@@ -76,7 +78,9 @@ checkboxes =( ("Warm Starting"   , "enableWarmStarting"),
               ("Pause"           , "pause"),
               ("Single Step"     , "singleStep"),
               ("Blind Filter"    , "blindFilter"),
-              ("Plot Part. Coord", "plotParticlesTrueCoordinates")
+              ("Plot Part. Coord", "plotParticlesTrueCoordinates"),
+              ("Hide Manipulandum", "hideManipulandum"),
+              ("Random In Hand"   , "sampleRandomManipulandum")
             )
           
 

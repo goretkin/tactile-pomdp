@@ -736,7 +736,7 @@ class PlaceObject(Framework):
         #do physics and conventional plotting
         super(PlaceObject, self).Step(settings)
 
-        self.Print(str(self.dynamics.sample_manipuland_in_hand_rejection_iterations))
+        #self.Print(str(self.dynamics.sample_manipuland_in_hand_rejection_iterations))
 
         if self.dynamics.grasp_slip_joint is not None:
             c = self.dynamics.grasp_slip_joint.anchorA #or anchorB
@@ -839,13 +839,20 @@ class PlaceObject(Framework):
     # More functions can be changed to allow for contact monitoring and such.
     # See the other testbed examples for more information.
 
+
 if __name__=="__main__":
     #main(PlaceObject)
     domain = PlaceObject()
     domain.setCenter(domain.dynamics.manipuland_body.worldCenter)
     domain.setZoom(50.0)
+
+    from pyqt4_draw_selective import PyQt4DrawSelective
+
+    domain.renderer = PyQt4DrawSelective(domain)
+    domain.world.DrawDebugData = lambda: domain.renderer.ManualDraw()
+
     #domain.run()
-    #domain.run_init()
+    domain.run_init()
 
 
 
