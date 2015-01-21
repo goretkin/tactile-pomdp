@@ -29,6 +29,9 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon as mplPolygon
 import matplotlib as mpl
 
+import threading
+import asyncio
+
 class ForceSensor:
     def __init__(self,body,hand):
         self.body = body
@@ -841,7 +844,7 @@ if __name__=="__main__":
     domain = Empty()
     domain.setCenter(domain.dynamics.manipuland_body.worldCenter)
     domain.setZoom(50.0)
-    domain.run()
+    #domain.run()
     #domain.run_init()
 
 
@@ -934,6 +937,6 @@ if __name__=="__main__":
             d.Print('Plot Thresh: %f'%(plot_thresh) )
             d.Print('Num Obs: %d'%(f.observations_made))
 
-    domain.render_callback = HookupFilter(f).callback
+    #domain.render_callback = HookupFilter(f).callback
 
 

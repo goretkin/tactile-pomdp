@@ -41,7 +41,7 @@ from PyQt4.QtGui import QTableWidget, QTableWidgetItem, QColor, QPixmap
 from PyQt4.QtCore import Qt, QSettings
 from pyqt4_gui import Ui_MainWindow
 from framework import *
-from time import time
+#from time import time
 import settings
 import string
 import sys
