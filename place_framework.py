@@ -347,11 +347,7 @@ class Dynamics():
         self.grasp_center = None
 
         self.sample_manipuland_in_hand_rejection_iterations = None
-
-    def guarded_move(self,velocity):
-        pass
         
-
     def update_sample_manipuland_in_hand_rejection(self,iterations):
         if self.sample_manipuland_in_hand_rejection_iterations is None:
             self.sample_manipuland_in_hand_rejection_iterations = iterations
@@ -588,6 +584,7 @@ class PlaceObject(Framework):
         self.last_simulation_state = None
 
         self.render_callback = None
+        self.senseact_callback = None
 
         self.settingsLocal = None
         self.singleStepLocal = False
@@ -686,6 +683,10 @@ class PlaceObject(Framework):
         If placed at the beginning, it will cause the actual physics step to happen first.
         If placed at the end, it will cause the physics step to happen after your code.
         """
+
+        if self.senseact_callback:
+            self.senseact_callback()
+
         if self.renderer:
             phy2pix = self.renderer.to_screen
 
@@ -708,7 +709,9 @@ class PlaceObject(Framework):
 
             self.dynamics.restore_simulation_state(self.last_simulation_state)
 
-
+        if settings.sampleRandomManipulandum:
+            t = self.dynamics.sample_manipuland_in_hand()
+            self.dynamics.manipuland_body.transform = ( t.position,t.angle )
 
         if not self.dynamics.gripper_direct_control:
             self.dynamics.gripper_rotation_control.solve()
@@ -738,9 +741,16 @@ class PlaceObject(Framework):
 
         #self.Print(str(self.dynamics.sample_manipuland_in_hand_rejection_iterations))
 
+        self.forcetorque_measurement = (0.,0.,0.)
+
         if self.dynamics.grasp_slip_joint is not None:
-            c = self.dynamics.grasp_body.position
             force = self.dynamics.grasp_slip_joint.GetReactionForce(timeStep)
+            torque = self.dynamics.grasp_slip_joint.GetReactionTorque(timeStep)
+
+            self.forcetorque_measurement = (force[0],force[1],torque)
+
+            c = self.dynamics.grasp_body.position
+
 
             if self.renderer:
                 self.renderer.DrawPoint(phy2pix(c), 
@@ -753,7 +763,7 @@ class PlaceObject(Framework):
                     )
 
             #plot a coil to show the torque
-            torque = self.dynamics.grasp_slip_joint.GetReactionTorque(timeStep)
+
             torque *= 1000
 
             mag_torque = np.abs(torque)
@@ -847,7 +857,9 @@ if __name__=="__main__":
     #domain.run()
     domain.run_init()
 
-
+    from controller import Controller
+    controller = Controller(domain)
+    domain.senseact_callback = controller.senseact
 
     d = domain.dynamics
     s = Dynamics(gripper_direct_control=True)
