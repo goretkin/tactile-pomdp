@@ -739,8 +739,7 @@ class PlaceObject(Framework):
         #self.Print(str(self.dynamics.sample_manipuland_in_hand_rejection_iterations))
 
         if self.dynamics.grasp_slip_joint is not None:
-            c = self.dynamics.grasp_slip_joint.anchorA #or anchorB
-            c = self.dynamics.grasp_center
+            c = self.dynamics.grasp_body.position
             force = self.dynamics.grasp_slip_joint.GetReactionForce(timeStep)
 
             if self.renderer:
@@ -772,21 +771,15 @@ class PlaceObject(Framework):
                 xy += phy2pix(c)
                 self.renderer.DrawPolygon(xy,b2Color(*torque_color),closed=False)
 
-                if False: 
-                    pygame.draw.lines(self.renderer.surface,
-                        torque_color,
-                        False, #not closed
-                        xy, #point list
-                        1) #width
+        if not self.settings.hideManipulandum:
+            #draw manipuland velocity
+            c = self.dynamics.manipuland_body.position
 
-        #draw manipuland velocity
-        c = self.dynamics.manipuland_body.position
-
-        if self.renderer: 
-            self.renderer.DrawSegment(phy2pix(c),
-                    phy2pix(c + .2 * self.dynamics.manipuland_body.linearVelocity ),
-                    b2Color(.5,.5,0)
-                    )
+            if self.renderer: 
+                self.renderer.DrawSegment(phy2pix(c),
+                        phy2pix(c + .2 * self.dynamics.manipuland_body.linearVelocity ),
+                        b2Color(.5,.5,0)
+                        )
 
 
 
