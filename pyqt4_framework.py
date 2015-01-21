@@ -630,17 +630,19 @@ class Pyqt4Framework(FrameworkBase):
     viewOffset = property(lambda self: self._viewOffset,
                            doc='The offset of the top-left corner of the screen')
 
-    def run(self):
-        """
-        What would be the main loop is instead a call to 
-        app.exec_() for the event-driven pyqt4.
-        """
+    def run_init(self): 
         global app
         self.step_timer = QtCore.QTimer()
         QObject.connect(self.step_timer, SIGNAL("timeout()"), lambda : self.SimulationLoop())
         QObject.connect(self.window.twProperties, SIGNAL('itemChanged(QTableWidgetItem*)'), self.prop_cell_changed)
         self.step_timer.start(int((1000.0/self.settings.hz)))
 
+    def run(self):
+        """
+        What would be the main loop is instead a call to 
+        app.exec_() for the event-driven pyqt4.
+        """
+        global app
         app.exec_()
         
         self.step_timer.stop()

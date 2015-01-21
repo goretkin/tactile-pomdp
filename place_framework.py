@@ -567,18 +567,18 @@ class Blank(object):
     pass
 
 
-class Empty(Framework):
+class PlaceObject(Framework):
     """You can use this class as an outline for your tests.
 
     """
-    name = "Empty" # Name of the class to display
+    name = "PlaceObject" # Name of the class to display
     description="The description text goes here"
     def __init__(self):
         """ 
         Initialize all of your objects here.
         Be sure to call the Framework's initializer first.
         """
-        super(Empty, self).__init__()
+        super(PlaceObject, self).__init__()
 
         self.install_dynamics()
 
@@ -734,7 +734,7 @@ class Empty(Framework):
 
         #self.world.DrawDebugData()
         #do physics and conventional plotting
-        super(Empty, self).Step(settings)
+        super(PlaceObject, self).Step(settings)
 
         self.Print(str(self.dynamics.sample_manipuland_in_hand_rejection_iterations))
 
@@ -840,8 +840,8 @@ class Empty(Framework):
     # See the other testbed examples for more information.
 
 if __name__=="__main__":
-    #main(Empty)
-    domain = Empty()
+    #main(PlaceObject)
+    domain = PlaceObject()
     domain.setCenter(domain.dynamics.manipuland_body.worldCenter)
     domain.setZoom(50.0)
     #domain.run()
