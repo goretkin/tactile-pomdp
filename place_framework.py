@@ -285,6 +285,7 @@ class Dynamics():
             shapes=b2.polygonShape(box=(5.0,1.0)),
             )
 
+        #not used when gripper_direct_control==True, should move into if-block
         self.grasp_pivot_body = self.world.CreateDynamicBody(position=(0.0,5.0))
         self.grasp_pivot_body.fixedRotation = True
 
@@ -302,12 +303,17 @@ class Dynamics():
         self.grasp_fixture.sensor = True #it doesn't collide with anything
 
         if self.gripper_direct_control:
-            self.grasp_body.gravityScale = 0.0 #we will velocity/position/force control this ourselves
-            #forces on the order of manipuland weight
-            #don't move this body because it's so massive and viscous.
-            
-            self.grasp_body.mass = 1e10
-            self.grasp_body.inertia = 1e10
+            #we will velocity/position/force control this ourselves
+            self.grasp_body.gravityScale = 0.0 
+
+            if True:
+                #forces on the order of manipuland weight
+                #don't move this body because it's so massive and viscous.
+                self.grasp_body.mass = 1e10
+                self.grasp_body.inertia = 1e10
+            else:
+                self.grasp_body.mass = 1e0
+                self.grasp_body.inertia = 1e0 
 
             #if we do get it going with some velocity, make sure it dies fast
             #self.grasp_body.linearDamping = 1e5
@@ -342,6 +348,12 @@ class Dynamics():
 
         #self.grasp_rotate_joint = self.world.CreateRevoluteJoint(bodyA=self.grasp_body, bodyB=self.manipuland_body, anchor=self.grasp_body.worldCenter)
         self.grasp_slip_joint = None
+
+        #need to recreate grasp_slip joint for changes to take effect
+        self.slip_force = 50.0 * 1e6
+        self.slip_torque = 50.0 * 1e6
+
+        #self.slip_force = self.slip_torque = "inf"
 
         self.create_grasp_slip_joint()
         self.grasp_center = None
@@ -479,10 +491,13 @@ class Dynamics():
             self.destroy_grasp_slip_joint()
         assert self.grasp_slip_joint is None
         #return world.CreateRevoluteJoint(bodyA=self.grasp_body,bodyB=self.manipuland_body anchor=grasp_body.worldCenter+(0,0))
-        #return world.CreateWeldJoint(bodyA=self.grasp_body,bodyB=self.manipuland_body)
-        a = self.world.CreateFrictionJoint(bodyA=self.grasp_body,bodyB=self.manipuland_body)
-        a.maxForce = 50.0
-        a.maxTorque = 50.0
+        if self.slip_force == "inf" and self.slip_torque == "inf":
+            a = self.world.CreateWeldJoint(bodyA=self.grasp_body,bodyB=self.manipuland_body)
+        else:
+            a = self.world.CreateFrictionJoint(bodyA=self.grasp_body,bodyB=self.manipuland_body)
+            a.maxForce = self.slip_force
+            a.maxTorque = self.slip_torque
+
         self.grasp_slip_joint = a
 
     def destroy_grasp_slip_joint(self):
@@ -576,6 +591,7 @@ class PlaceObject(Framework):
         """
         super(PlaceObject, self).__init__()
 
+        self.dynamics = None
         self.install_dynamics()
 
         self.memory = {}
@@ -583,11 +599,13 @@ class PlaceObject(Framework):
         self.clean_world = True #totally wipe out the world and reset simulator state each step
         self.last_simulation_state = None
 
-        self.render_callback = None
-        self.senseact_callback = None
+        self.callbacks_after = []   #to call after a physics iteration
+        self.callbacks_before = []  #to call before a physics iteration
 
         self.settingsLocal = None
         self.singleStepLocal = False
+
+        self.simtime = 0.0
 
     def install_dynamics(self):
         #will write over existing dynamics if any.
@@ -683,19 +701,20 @@ class PlaceObject(Framework):
         If placed at the beginning, it will cause the actual physics step to happen first.
         If placed at the end, it will cause the physics step to happen after your code.
         """
+        self.settingsLocal = settings
+        self.singleStepLocal = settings.singleStep
 
-        if self.senseact_callback:
-            self.senseact_callback()
+        for f in self.callbacks_before:
+            f()
 
         if self.renderer:
             phy2pix = self.renderer.to_screen
 
         timeStep = 1.0/settings.hz #might not be the actual time step.
+        self.simtime += timeStep
 
         self.last_simulation_state = self.dynamics.get_simulation_state()
-        
-        self.settingsLocal = settings
-        self.singleStepLocal = settings.singleStep
+
 
         if self.clean_world and not self.last_simulation_state is None:
             #self.world = Box2D.b2World(gravity=(0,-100), doSleep=True)
@@ -821,8 +840,8 @@ class PlaceObject(Framework):
                     b2Color(0,1,1),
                     )
 
-        if self.render_callback:
-            self.render_callback(self,settings)
+        for f in self.callbacks_after:
+            f()
 
         # Placed after the physics step, it will draw on top of physics objects
         self.Print("*** Base your own testbeds on me! ***")
@@ -839,9 +858,13 @@ class PlaceObject(Framework):
         """
         pass
 
+    def BeginContact(self, contact):
+        #print(self.simtime, contact)
+        if self.dynamics is not None:
+            self.dynamics.last_contact = (self.simtime,contact)
+
     # More functions can be changed to allow for contact monitoring and such.
     # See the other testbed examples for more information.
-
 
 if __name__=="__main__":
     #main(PlaceObject)
@@ -859,7 +882,15 @@ if __name__=="__main__":
 
     from controller import Controller
     controller = Controller(domain)
-    domain.senseact_callback = controller.senseact
+    domain.callbacks_before.append( controller.senseact )
+
+    from DropExperiment import DropExperiment
+    from ImpulseExperiment import ImpulseExperiment
+    #dropexperiment = DropExperiment(domain)
+    #domain.callbacks_before.append( dropexperiment.senseact )
+
+    experiment = ImpulseExperiment(domain)
+    #domain.callbacks_before.append( experiment.senseact)
 
     d = domain.dynamics
     s = Dynamics(gripper_direct_control=True)
