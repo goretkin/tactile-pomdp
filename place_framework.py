@@ -299,14 +299,14 @@ class Dynamics():
             self.grasp_fixture_before_ft.sensor = True #it doesn't collide with anything
 
         self.grasp_body = self.world.CreateDynamicBody(position=(0.0,5.0), angle=0.0)
-        self.grasp_fixture = self.grasp_body.CreatePolygonFixture(box=(.2,.2), density=1.0) #density is required so that torques make the body rotate.
+        self.grasp_fixture = self.grasp_body.CreatePolygonFixture(box=(.2,.2), density=100.0) #density is required so that torques make the body rotate.
         self.grasp_fixture.sensor = True #it doesn't collide with anything
 
         if self.gripper_direct_control:
             #we will velocity/position/force control this ourselves
             self.grasp_body.gravityScale = 0.0 
 
-            if True:
+            if False:
                 #forces on the order of manipuland weight
                 #don't move this body because it's so massive and viscous.
                 self.grasp_body.mass = 1e10
@@ -353,7 +353,8 @@ class Dynamics():
         self.slip_force = 50.0 * 1e6
         self.slip_torque = 50.0 * 1e6
 
-        #self.slip_force = self.slip_torque = "inf"
+        self.slip_force = self.slip_torque = None
+        self.noslip = True 
 
         self.create_grasp_slip_joint()
         self.grasp_center = None
@@ -369,7 +370,7 @@ class Dynamics():
                 .02 * iterations)
 
     def step_grasp(self):
-        if self.grasp_slip_joint is not None:
+        if self.grasp_slip_joint is not None and (not self.noslip):
             if Box2D.b2TestOverlap(self.grasp_fixture.shape,0,
                                     self.manipuland_fixture.shape,0,
                                     self.grasp_body.transform,
@@ -491,7 +492,7 @@ class Dynamics():
             self.destroy_grasp_slip_joint()
         assert self.grasp_slip_joint is None
         #return world.CreateRevoluteJoint(bodyA=self.grasp_body,bodyB=self.manipuland_body anchor=grasp_body.worldCenter+(0,0))
-        if self.slip_force == "inf" and self.slip_torque == "inf":
+        if self.noslip:
             a = self.world.CreateWeldJoint(bodyA=self.grasp_body,bodyB=self.manipuland_body)
         else:
             a = self.world.CreateFrictionJoint(bodyA=self.grasp_body,bodyB=self.manipuland_body)
@@ -522,7 +523,7 @@ class Dynamics():
         ss.manipuland_body.position = tuple(self.manipuland_body.position)
         ss.manipuland_body.angle = self.manipuland_body.angle
 
-        if self.grasp_slip_joint:
+        if self.grasp_slip_joint and False: #FIXME when the slip_joint is actually a Weld joint, it doesn't have these parameters. 
             ss.grasp_slip_joint = Blank()
                 
             #assuming fixed time step of filter box2d world
@@ -596,7 +597,7 @@ class PlaceObject(Framework):
 
         self.memory = {}
 
-        self.clean_world = True #totally wipe out the world and reset simulator state each step
+        self.clean_world = False #totally wipe out the world and reset simulator state each step NOT WORKING WITH noslip=true
         self.last_simulation_state = None
 
         self.callbacks_after = []   #to call after a physics iteration
@@ -762,9 +763,14 @@ class PlaceObject(Framework):
 
         self.forcetorque_measurement = (0.,0.,0.)
 
+        #Force measurement is a vector plotted as a physical length
+        plot_meters_per_newton = .01
+        #Torque measurement is a spiral whose radius is also a physical length
+        plot_meters_per_newtonmeter = .01
+
         if self.dynamics.grasp_slip_joint is not None:
-            force = self.dynamics.grasp_slip_joint.GetReactionForce(timeStep)
-            torque = self.dynamics.grasp_slip_joint.GetReactionTorque(timeStep)
+            force = self.dynamics.grasp_slip_joint.GetReactionForce(1.0/timeStep)
+            torque = self.dynamics.grasp_slip_joint.GetReactionTorque(1.0/timeStep)
 
             self.forcetorque_measurement = (force[0],force[1],torque)
 
@@ -777,23 +783,20 @@ class PlaceObject(Framework):
 
 
                 self.renderer.DrawSegment(phy2pix(c),
-                    phy2pix(c + force * 50),
+                    phy2pix(c + force * plot_meters_per_newton),
                     b2Color(1,1,0)
                     )
 
             #plot a coil to show the torque
-
-            torque *= 1000
-
             mag_torque = np.abs(torque)
             sign_torque = np.sign(torque)
 
             n_spiral_pieces = int(50*mag_torque)
-            s = np.linspace(0,mag_torque,n_spiral_pieces) 
+            s = np.linspace(0,mag_torque,n_spiral_pieces) * plot_meters_per_newtonmeter
 
             if len(s) > 1:
-                r = (0.1*s)
-                u = np.c_[np.cos(sign_torque*s),np.sin(sign_torque*s)]
+                r = s
+                u = np.c_[np.cos(sign_torque*s*10),np.sin(sign_torque*s*10)]
                 xy = u * r[:,None] #add a singleton index to broadcast correctly
 
                 torque_color = (1,0,0) if torque >0 else (0,1,0)
