@@ -209,3 +209,23 @@ class VoronoiH():
         #  np.dot(plane[0:-1] , point) + plane[-1] < 0 is true for a point in the voronoi cell.
         outer,inner = self.hrep_voronoi_cell(i)
         return np.r_[outer,inner,self.bounds_planes]
+    
+    def ridge_list(self):
+        segments = []
+        
+        for i in range(len(self.points)):
+            for point_j,vertex_is in self.ridges_of(i).iteritems():
+                if 0 in vertex_is:
+                    other_vertex = max(vertex_is)
+                    #this ray separates i and point_j, and starts at other_vertex
+                    d = (self.points[i] + self.points[point_j]) / 2.0
+                    v = self.v.vertices[other_vertex]
+                    segments.append( [d,v] )
+
+                else:
+                    assert(len(vertex_is)==2) #a line segment in 2D separates two points in 2D.
+                    a = self.v.vertices[vertex_is[0]]
+                    b = self.v.vertices[vertex_is[1]]
+                    segments.append([a,b])
+        return segments
+            

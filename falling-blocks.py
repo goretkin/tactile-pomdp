@@ -3,7 +3,7 @@ import pygame, sys, math, random
 from pygame.locals import *
  
 # set up pygame-box2d constants
-box_size=0.9
+box_size=1.8
 pillar_height=15.0
 pygame_box2d_ratio=10.0
 ground_height=10.0
@@ -49,43 +49,30 @@ groundBody=world.CreateStaticBody(
     position=(25,ground_height/2.0),
     shapes=b2PolygonShape(box=(25,ground_height/2.0)),
     )
-  
-# pillar bodies
-  
-pillarBody=world.CreateStaticBody(
-    position=(0.5,(pillar_height/2.0)+ground_height),
-    shapes=b2PolygonShape(box=(0.5,pillar_height/2.0)),
-    )
- 
-pillarBody=world.CreateStaticBody(
-    position=(10,(pillar_height/2.0)+ground_height),
-    shapes=b2PolygonShape(box=(1.5,pillar_height/2.0)),
-    )
- 
-pillarBody=world.CreateStaticBody(
-    position=(20,(pillar_height/2.0)+ground_height),
-    shapes=b2PolygonShape(box=(0.5,pillar_height/2.0)),
-    )
- 
-pillarBody=world.CreateStaticBody(
-    position=(30,(pillar_height/2.0)+ground_height),
-    shapes=b2PolygonShape(box=(1,pillar_height/2.0)),
-    )
- 
-pillarBody=world.CreateStaticBody(
-    position=(40,(pillar_height/2.0)+ground_height),
-    shapes=b2PolygonShape(box=(2,pillar_height/2.0)),
-    )
  
 def create_dynamic_box(xpos):
     body=world.CreateDynamicBody(position=(xpos/pygame_box2d_ratio,40))
     box=body.CreatePolygonFixture(box=(box_size/2.0,box_size/2.0), density=1, friction=0.3)
     return body
+
+world.CreateKinematicBody(position=(40,40))
+
+def draw_dynamic_body(box):
+    #rotate surf by DEGREE amount degrees
+    rotatedredbox =  pygame.transform.rotozoom(redbox, math.degrees(box.angle),1)
+    rotatedredbox.set_colorkey(0)
+    windowSurface.blit(rotatedredbox, ((box.position.x*pygame_box2d_ratio)-((box_size/2.0)*pygame_box2d_ratio),pygame_screen_y-(box.position.y*pygame_box2d_ratio)-((box_size/2.0)*pygame_box2d_ratio)))
+ 
+
  
 # load image
 #redbox=pygame.image.load("d:\\redbox.png").convert()
-redbox=pygame.image.load("box.png").convert()
-  
+
+#make falling squares
+_a = box_size*pygame_box2d_ratio
+redbox=pygame.Surface((_a,_a),)
+pygame.draw.rect(redbox,RED,redbox.get_rect())
+
 # Prepare for simulation. Typically we use a time step of 1/60 of a
 # second (60Hz) and 6 velocity/2 position iterations. This provides a
 # high quality simulation in most game scenarios.
@@ -115,17 +102,7 @@ while ev.type!=pygame.QUIT:
     # draw ground
     pygame.draw.rect(windowSurface, GREEN, (0, pygame_screen_y-(ground_height*pygame_box2d_ratio), pygame_screen_x,pygame_screen_y ))
   
-    # draw pillars
-    pygame.draw.rect(windowSurface, GREEN, (5.0-(0.5*pygame_box2d_ratio), pygame_screen_y-((pillar_height*pygame_box2d_ratio)+(ground_height*pygame_box2d_ratio)), (1*pygame_box2d_ratio),(pillar_height*pygame_box2d_ratio)))
-    pygame.draw.rect(windowSurface, GREEN, (100.0-(1.5*pygame_box2d_ratio), pygame_screen_y-((pillar_height*pygame_box2d_ratio)+(ground_height*pygame_box2d_ratio)), (3*pygame_box2d_ratio),(pillar_height*pygame_box2d_ratio)))
-    pygame.draw.rect(windowSurface, GREEN, (200.0-(0.5*pygame_box2d_ratio), pygame_screen_y-((pillar_height*pygame_box2d_ratio)+(ground_height*pygame_box2d_ratio)), (1*pygame_box2d_ratio),(pillar_height*pygame_box2d_ratio)))
-    pygame.draw.rect(windowSurface, GREEN, (300.0-(1*pygame_box2d_ratio), pygame_screen_y-((pillar_height*pygame_box2d_ratio)+(ground_height*pygame_box2d_ratio)), (2*pygame_box2d_ratio),(pillar_height*pygame_box2d_ratio)))
-    pygame.draw.rect(windowSurface, GREEN, (400.0-(2*pygame_box2d_ratio), pygame_screen_y-((pillar_height*pygame_box2d_ratio)+(ground_height*pygame_box2d_ratio)), (4*pygame_box2d_ratio),(pillar_height*pygame_box2d_ratio)))
-  
     for box in boxeslist:
-        #rotate surf by DEGREE amount degrees
-        rotatedredbox =  pygame.transform.rotozoom(redbox, math.degrees(box.angle),1)
-        rotatedredbox.set_colorkey(0)
-        windowSurface.blit(rotatedredbox, ((box.position.x*pygame_box2d_ratio)-((box_size/2.0)*pygame_box2d_ratio),pygame_screen_y-(box.position.y*pygame_box2d_ratio)-((box_size/2.0)*pygame_box2d_ratio)))
+        draw_dynamic_body(box)
     pygame.display.flip()
 pygame.quit()

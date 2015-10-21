@@ -280,10 +280,24 @@ class Dynamics():
         self.world.gravity = (0,-100)
 
         # And a static body to hold the ground shape
-        self.ground_body=self.world.CreateStaticBody(
+        self.ground_body = self.world.CreateStaticBody(
             position=(0.0,0.0),
-            shapes=b2.polygonShape(box=(5.0,1.0)),
+            shapes=b2.polygonShape(box=(5.0,.1)),
             )
+
+        
+        shape = b2.polygonShape();
+        shape.SetAsBox(.1, 5.0, (-5.,5.), 0.0 )
+        self.env_fixture_left = self.ground_body.CreateFixture(b2FixtureDef(shape=shape), density=0.0) #no density for static body
+
+        shape = b2.polygonShape();
+        shape.SetAsBox(.1, 5.0, (5.,5.), 0.0 )
+        self.env_fixture_right = self.ground_body.CreateFixture(b2FixtureDef(shape=shape), density=0.0) #no density for static body
+
+        shape = b2.polygonShape();
+        shape.SetAsBox(5.0, .1, (0.,10.), 0.0 )
+        self.env_fixture_top = self.ground_body.CreateFixture(b2FixtureDef(shape=shape), density=0.0) #no density for static body
+
 
         #not used when gripper_direct_control==True, should move into if-block
         self.grasp_pivot_body = self.world.CreateDynamicBody(position=(0.0,5.0))
@@ -291,7 +305,6 @@ class Dynamics():
 
         self.use_force_torque = False
         self.ft_sensor = None
-
 
         if self.use_force_torque:
             self.grasp_body_before_ft = self.world.CreateDynamicBody(position=(0.0,5.0), angle=0.0)
@@ -791,7 +804,7 @@ class PlaceObject(Framework):
             mag_torque = np.abs(torque)
             sign_torque = np.sign(torque)
 
-            n_spiral_pieces = int(50*mag_torque)
+            n_spiral_pieces = int(100)
             s = np.linspace(0,mag_torque,n_spiral_pieces) * plot_meters_per_newtonmeter
 
             if len(s) > 1:

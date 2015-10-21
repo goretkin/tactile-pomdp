@@ -1,6 +1,7 @@
 from place_framework import *
 
 #makes sure that mass, gravity, time, impulse consistent
+#except that energy isn't being conserved, 
 
 #if initial impulse is not strong enough to make the obstacle jump up, the experiment will hang
 class ImpulseExperiment():
