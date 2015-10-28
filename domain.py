@@ -1,9 +1,16 @@
 import numpy as np
 from sets import Set
+
+def rot_SO2(theta):
+    rot = [[np.cos(theta), np.sin(theta)],
+       [-np.sin(theta), np.cos(theta)]]
+    return np.array(rot)
+
 class PlanarPolygonObjectInCorner():
     def __init__(self,vertex_list=None):
         
         if vertex_list is None:
+            #counter-clockwise
             vertex_list = [ [1,1], [1,-1], [-1,-1], [-1,1] ]
       
         self.num_vertices = len(vertex_list)
@@ -27,12 +34,26 @@ class PlanarPolygonObjectInCorner():
         return self.pose  
         
     def move(self,x,y,theta):
+        """
+        incremental move
+        """
         rot = [[np.cos(theta), np.sin(theta)],
                [-np.sin(theta), np.cos(theta)]]
         
         xy_c = self.get_pose()[0:2]
         self.vertex_list = np.dot(self.vertex_list-xy_c,rot) + xy_c + np.array([x,y])
         self.pose = self.pose + np.array([x,y,theta])
+
+    def get_posed_vertices(self, pose):
+        """
+        don't change state. just return position of would-be vertices after a set_pose
+        """
+        x, y, theta = pose
+        rot = [[np.cos(theta), np.sin(theta)],
+               [-np.sin(theta), np.cos(theta)]]
+
+        return np.dot(self.vertex_list_original,rot) + np.array([x,y])
+
         
     def restore(self):
         self.pose = np.array([0,0,0])
@@ -160,6 +181,71 @@ class PlanarPolygonObjectInCorner():
         bot_y = self.vertex_list[bottom_vertex,1]
         return bot_y < 0
         
+    def intersects_jig(self):
+        left_vertex = np.argmin(self.vertex_list[:,0])
+        bottom_vertex = np.argmin(self.vertex_list[:,1])
+        
+        left_x = self.vertex_list[left_vertex,0]
+        bot_y = self.vertex_list[bottom_vertex,1]
+        return bot_y < 0 or left_x < 0
+
+    def get_pose_grounded_vertex(self, manipulandum_vertex_i, grounding_point, angle):
+        contact_vertex = self.vertex_list_original[manipulandum_vertex_i,:]
+        contact_vertex_to_centroid = np.array([0,0])-contact_vertex
+        
+        contact_vertex_to_centroid_rotated = np.dot(contact_vertex_to_centroid, rot_SO2(angle))
+        centroid = contact_vertex_to_centroid_rotated + grounding_point
+
+        return np.array([centroid[0], centroid[1], angle])
+        #cw_vertex_i = (manipulandum_vertex_i+1)%self.num_vertices
+        #ccw_vertex_i = (manipulandum_vertex_i-1)%self.num_vertices
+        #contact_vertex_to_cw_vertex = self.vertex_list_original[cw_vertex_i,:] - contact_vertex
+        #contact_vertex_to_ccw_vertex = self.vertex_list_original[ccw_vertex_i,:] - contact_vertex
+
+    def get_pose_against_edge(self, jig_edge_i, angle, displacement_along_edge):
+        if jig_edge_i == 0:
+            #bottom edge
+            projected_centroid = np.array([0, displacement_along_edge])
+            jig_edge_normal = np.array([0,1])
+            jig_edge_tangent = np.array([1,0])
+        elif jig_edge_i == 1:
+            #bottom edge
+            projected_centroid = np.array([displacement_along_edge, 0])
+            jig_edge_normal = np.array([1,0])
+            jig_edge_tangent = np.array([0,1])
+        else:
+            raise ValueError("jig edge invalid: %s"%jig_edge_i)
+
+        rotated = self.get_posed_vertices((0, 0, angle))
+        contact_vertex_i = np.argmin(np.dot(rotated, jig_edge_normal))
+        contact_vertex_to_centroid_rotated = np.array([0,0]) - rotated[contact_vertex_i,:]
+
+        #find the displacement from the contact vertex to the centroid, projected along the jig edge we're contacting
+        component_along_edge = np.dot(jig_edge_tangent, contact_vertex_to_centroid_rotated)
+
+        ground_point = np.array([0,0]) + jig_edge_tangent*(displacement_along_edge - component_along_edge)
+
+        return self.get_pose_grounded_vertex(contact_vertex_i, ground_point, angle)
+
+    def get_pose_against_corner(self, jig_corner_i, angle):
+        if jig_corner_i == 0:
+            #bottom edge
+            jig_edge1_normal = np.array([0,1])
+            jig_edge1_tangent = np.array([1,0])
+            jig_edge2_normal = np.array([1,0])
+            jig_edge2_tangent = np.array([0,1])
+        else:
+            raise ValueError("jig corner invalid: %s"%jig_corner_i)
+
+        #total hack that works for this simple jig.
+        arbitrary=-10
+        pose1 = self.get_pose_against_edge(jig_edge_i=0, angle=angle, displacement_along_edge=arbitrary)
+        pose2 = self.get_pose_against_edge(jig_edge_i=1, angle=angle, displacement_along_edge=arbitrary)
+
+        pose = np.array([pose2[0], pose1[1], angle])
+        return pose
+
+
 def normang(a):
     while(a>np.pi):
         a = a - 2*np.pi
