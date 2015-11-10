@@ -189,6 +189,14 @@ class PlanarPolygonObjectInCorner():
         bot_y = self.vertex_list[bottom_vertex,1]
         return bot_y < 0 or left_x < 0
 
+    def intersects_jig_which(self):
+        left_vertex = np.argmin(self.vertex_list[:,0])
+        bottom_vertex = np.argmin(self.vertex_list[:,1])
+        
+        left_x = self.vertex_list[left_vertex,0]
+        bot_y = self.vertex_list[bottom_vertex,1]
+        return [bot_y < 0+1e-10, left_x < 0+1e-10]
+
     def get_pose_grounded_vertex(self, manipulandum_vertex_i, grounding_point, angle):
         contact_vertex = self.vertex_list_original[manipulandum_vertex_i,:]
         contact_vertex_to_centroid = np.array([0,0])-contact_vertex
@@ -278,4 +286,18 @@ def plot_obj(obj,ax=None,kwline={},kwcontact={}):
     contacts = Set.union(Set(leftcontact),Set(bottomcontact))
     
     i = list(contacts)
-    ax.plot(obj.vertex_list[i,0],obj.vertex_list[i,1],'r.',**kwcontact)
+    return ax.plot(obj.vertex_list[i,0],obj.vertex_list[i,1],'r.',**kwcontact)
+
+def plot_jig_relative(obj, ax, obj_pose=(0,0,0), kwline={}, kwcontact={}):
+    """
+    obj_pose is the pose that the object is made to appear at, and the jig ploted relative to it
+    """
+    jig_vertices = np.array([[5.0, 0.0], [0.0, 0.0], [0.0, 5.0]])
+    x, y, angle = obj.get_pose()
+
+    jig_vertices_transformed = np.dot(jig_vertices  - [x, y], rot_SO2(-angle))
+
+    return ax.plot(jig_vertices_transformed[:,0], jig_vertices_transformed[:,1], **kwline)
+
+
+
