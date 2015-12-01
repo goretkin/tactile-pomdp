@@ -203,20 +203,10 @@ class PlanarPolygonObjectInCorner():
         return moment
 
     def intersects_bottom(self):
-        left_vertex = np.argmin(self.vertex_list[:,0])
-        bottom_vertex = np.argmin(self.vertex_list[:,1])
-        
-        left_x = self.vertex_list[left_vertex,0]
-        bot_y = self.vertex_list[bottom_vertex,1]
-        return bot_y < 0
+        return self.intersects_jig_which()[0]
         
     def intersects_jig(self):
-        left_vertex = np.argmin(self.vertex_list[:,0])
-        bottom_vertex = np.argmin(self.vertex_list[:,1])
-        
-        left_x = self.vertex_list[left_vertex,0]
-        bot_y = self.vertex_list[bottom_vertex,1]
-        return bot_y < 0 or left_x < 0
+        return any(self.intersects_jig_which())
 
     def intersects_jig_which(self):
         left_vertex = np.argmin(self.vertex_list[:,0])
