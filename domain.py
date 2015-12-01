@@ -1,6 +1,9 @@
 import numpy as np
 from sets import Set
 
+"""
+we left-multiply points, so the rotation matrix might be transpose of what you expect
+"""
 def rot_SO2(theta):
     rot = [[np.cos(theta), np.sin(theta)],
        [-np.sin(theta), np.cos(theta)]]
@@ -17,7 +20,8 @@ class PlanarPolygonObjectInCorner():
         #self.edge_list = [(i,i+i) for i in range(self.num_vertices-1)] + [(self.num_vertices-1,0)]
     
         self.vertex_list_original = np.copy(vertex_list)
-        
+        #edge 0-1, 1-2, 2-3, 3-0
+        self.edge_angles_original = np.array([np.deg2rad(180), np.deg2rad(270), np.deg2rad(0), np.deg2rad(90)])
         self.wall_x = 0
         self.wall_y = 0
         
@@ -54,6 +58,27 @@ class PlanarPolygonObjectInCorner():
 
         return np.dot(self.vertex_list_original,rot) + np.array([x,y])
 
+    def transform_object_point_to_jig_frame(self, pose, points):
+        x, y, theta = pose
+        rot = rot_SO2(theta)
+
+        if len(points)==0:
+            #interpret as an empty list of points
+            return np.zeros(shape=(0,2))
+
+        points_np = np.array(points)
+        # should make sure points is not a jagged array (dtype would be object)
+        if points_np.ndim == 1:
+            #there is a single point
+            if not points_np.shape == (2,):
+                raise ValueError("point is not 2 dim")
+
+        elif points_np.dim == 2:
+            if not points_np.shape[1] == 2:
+                raise ValueError("points are not 2 dim")
+        else:
+            raise ValueError("not a point and not a list of points")
+        return np.dot(points_np,rot) + np.array([x,y])
         
     def restore(self):
         self.pose = np.array([0,0,0])
@@ -151,6 +176,10 @@ class PlanarPolygonObjectInCorner():
         self.move(0,0,theta*t0)
         
     def contact_vertices(self):
+        """
+        returns indices into self.vertex_list indicating which vertices are in contact
+        with which jig edges
+        """
         contact_x = np.abs(self.vertex_list[:,0] - self.wall_x) < 1e-8
         contact_y = np.abs(self.vertex_list[:,1] - self.wall_y) < 1e-8
         
@@ -253,6 +282,71 @@ class PlanarPolygonObjectInCorner():
         pose = np.array([pose2[0], pose1[1], angle])
         return pose
 
+    def loose_theta(self, constraint_axis, center=(0,0)):
+        """
+        center is relative to object
+        constraint_axis is relative to jig, and goes through the center
+        constraint_axis is the guarded direction to move in.
+        """
+        jig_relative_center_before_translate = self.transform_object_point_to_jig_frame(self.pose, center)
+        self.translate_guarded(*constraint_axis)
+        jig_relative_center = self.transform_object_point_to_jig_frame(self.pose, center)
+        left_contacts, bottom_contacts = self.contact_vertices()
+        all_contacts = list(left_contacts) + list(bottom_contacts)
+        if len(all_contacts) == 0:
+            raise AssertionError("Took a guarded move but there are no contacts")
+
+        #easiest to think about the case where there is a single active contact.
+        #TODO incorporate other contacts. see Box2D code for example
+
+        moment_arms = self.vertices[all_contacts] - jig_relative_center
+        dots = np.dot(moment_arms, constraint_axis)
+
+        all_contacts_active_idxs = np.where(dots<1e-8)[0]
+        moment_arms_active = moment_arms[all_contacts_active_idxs]
+        vertices_contact_active = all_contacts[all_contacts_active_idxs]
+
+        if len(moment_arms_active) == 1:
+            moment_arm = moment_arms_active[0]
+            active_contact_vertex = all_contacts[all_contacts_active_idxs[0]]
+
+            if active_contact in left_contacts:
+                active_edge = "left"
+            elif active_contact in bottom_contacts:
+                active_edge = "bottom"
+            else:
+                raise AssertionError("which edge?")
+
+            if np.dot(moment_arm, constraint_axis) < 1e-8:
+                AssertionError("Moved in direction: %s, but contact moment arm is: %s, making a negative dot product."%
+                    constraint_axis, moment_arm, np.dot(moment_arm, constraint_axis))
+            torque_to_rotate = np.cross(constraint_axis, moment_arm)
+            direction_sign = np.sign(torque_to_rotate)
+            if direction_sign == 0:
+                raise AssertionError("wow amazing tie")
+
+            #vertices are listed counter-clockwise
+            vertex_index_neighbor_contact =  np.mod((all_contacts_active_idxs[0] - direction_sign), self.num_vertices)
+            if direction_sign < 0:
+                edge_contact = all_contacts_active_idxs[0]
+            elif direction_sign > 0:
+                edge_contact = np.mod((all_contacts_active_idxs[0] -1), self.num_vertices)
+            self.edge_angles_original
+            if all_contacts_active_idxs[0] in left_contacts:
+                pass # ???
+
+            if active_edge == "bottom":
+                resting_angle = -self.edge_angles_original[edge_contact]
+                jig_edge_i = 0
+            elif active_edge == "left":
+                resting_angle = -self.edge_angles_original[edge_contact] - np.deg2rad(90)
+                jig_edge_i = 1
+
+            arbitrary = 10
+            p = self.get_pose_against_edge(jig_edge_i, resting_angle, displacement_along_edge=arbitrary)
+            new_center_arbitrary = self.transform_object_point_to_jig_frame(p, center)
+   
+
 
 def normang(a):
     while(a>np.pi):
@@ -298,6 +392,4 @@ def plot_jig_relative(obj, ax, obj_pose=(0,0,0), kwline={}, kwcontact={}):
     jig_vertices_transformed = np.dot(jig_vertices  - [x, y], rot_SO2(-angle))
 
     return ax.plot(jig_vertices_transformed[:,0], jig_vertices_transformed[:,1], **kwline)
-
-
 
