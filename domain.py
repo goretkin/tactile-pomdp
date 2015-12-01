@@ -209,12 +209,23 @@ class PlanarPolygonObjectInCorner():
         return any(self.intersects_jig_which())
 
     def intersects_jig_which(self):
+        """
+        the intention of this method is to detect "contact"
+        """
         left_vertex = np.argmin(self.vertex_list[:,0])
         bottom_vertex = np.argmin(self.vertex_list[:,1])
         
         left_x = self.vertex_list[left_vertex,0]
         bot_y = self.vertex_list[bottom_vertex,1]
         return [bot_y < 0+1e-10, left_x < 0+1e-10]
+
+    def penetration(self):
+        left_vertex = np.argmin(self.vertex_list[:,0])
+        bottom_vertex = np.argmin(self.vertex_list[:,1])
+
+        left_x = self.vertex_list[left_vertex,0]
+        bot_y = self.vertex_list[bottom_vertex,1]
+        return max(0.0-left_x, 0.0-bot_y)
 
     def get_pose_grounded_vertex(self, manipulandum_vertex_i, grounding_point, angle):
         contact_vertex = self.vertex_list_original[manipulandum_vertex_i,:]
