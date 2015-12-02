@@ -1,6 +1,9 @@
 import numpy as np
 from sets import Set
 
+import itertools
+from nbprogressbar import ProgressBar
+
 """
 we left-multiply points, so the rotation matrix might be transpose of what you expect
 """
@@ -8,6 +11,80 @@ def rot_SO2(theta):
     rot = [[np.cos(theta), np.sin(theta)],
        [-np.sin(theta), np.cos(theta)]]
     return np.array(rot)
+
+class Discretization():
+    def __init__(self, domain):
+        self.domain = domain
+
+        self.delta_xy = .2
+        self.delta_r = np.deg2rad(360) / 40
+
+        self.xmin = 0
+        self.xmax = 5
+        self.ymin = 0
+        self.ymax = 5
+        self.rmin = np.deg2rad(-180)
+        self.rmax = np.deg2rad(180)
+
+        self.xs = np.arange(self.xmin, self.xmax, self.delta_xy)
+        self.ys = np.arange(self.ymin, self.ymax, self.delta_xy)
+        self.rs = np.arange(self.rmin, self.rmax, self.delta_r)
+
+    def discretize(self):
+        #discretize contact manifolds
+        bottom_edge_states = []
+        progressbar = ProgressBar(len(self.xs)*len(self.rs))
+
+        for xri, (x,r) in enumerate(itertools.product(self.xs, self.rs)):
+            pose = self.domain.get_pose_against_edge(jig_edge_i=0, angle=r, displacement_along_edge=x)
+            self.domain.set_pose(pose)
+            if not self.domain.intersects_jig_which()[1]:
+                bottom_edge_states.append(pose)
+            progressbar.animate(xri+1)
+        print("bottom edge done")
+
+        left_edge_states = []
+        progressbar = ProgressBar(len(self.ys)*len(self.rs))
+
+        for yri, (y,r) in enumerate(itertools.product(self.ys, self.rs)):
+            pose = self.domain.get_pose_against_edge(jig_edge_i=1, angle=r, displacement_along_edge=y)
+            self.domain.set_pose(pose)
+            if not self.domain.intersects_jig_which()[0]:
+                left_edge_states.append(pose)
+            progressbar.animate(yri+1)
+
+        print("left edge done")
+
+        corner_states = []
+        progressbar = ProgressBar(len(self.rs))
+        for ri, r in enumerate(self.rs):
+            pose = self.domain.get_pose_against_corner(jig_corner_i=0, angle=r)
+            self.domain.set_pose(pose)
+            if self.domain.intersects_jig() and self.domain.penetration()<1e-4:
+                corner_states.append(pose)
+            else:
+                print("you shouldn't see this.")
+            progressbar.animate(ri+1)
+        print("corner done")
+
+        free_states = []
+        progressbar = ProgressBar(len(self.xs) * len(self.ys) * len(self.rs))
+        for i, (x, y, r) in enumerate(itertools.product(self.xs, self.ys, self.rs)):
+            self.domain.restore()
+            self.domain.move(x,y,r)
+
+            #arbitrary amount of "not too much penetration"
+            if self.domain.penetration() < self.delta_xy/2.0:
+                free_states.append(self.domain.get_pose())
+            progressbar.animate(i+1)
+
+        self.bottom_edge_states = np.array(bottom_edge_states)
+        self.left_edge_states = np.array(left_edge_states)
+        self.corner_states = np.array(corner_states)
+        self.free_states = np.array(free_states)
+
+
+
 
 class PlanarPolygonObjectInCorner():
     def __init__(self,vertex_list=None):
@@ -372,16 +449,20 @@ def plot_obj(obj,ax=None,kwline={},kwcontact={}):
     
     i = range(obj.num_vertices) + [0]
     
-    ax.plot(obj.vertex_list[i,0],obj.vertex_list[i,1],'b-',**kwline)
+    plotted = []
     
-    ax.plot(obj.vertex_list[0,0],obj.vertex_list[0,1],'k*',**kwline) #to mark orientation
+    plotted.extend( ax.plot(obj.vertex_list[i,0],obj.vertex_list[i,1],'b-',**kwline) )
+
+    plotted.extend ( ax.plot(obj.vertex_list[0,0],obj.vertex_list[0,1],'k*',**kwline) ) #to mark orientation
     
     leftcontact, bottomcontact = obj.contact_vertices()
     
     contacts = Set.union(Set(leftcontact),Set(bottomcontact))
     
     i = list(contacts)
-    return ax.plot(obj.vertex_list[i,0],obj.vertex_list[i,1],'r.',**kwcontact)
+    plotted.extend( ax.plot(obj.vertex_list[i,0],obj.vertex_list[i,1],'r.',**kwcontact))
+
+    return plotted
 
 def plot_jig_relative(obj, ax, obj_pose=(0,0,0), kwline={}, kwcontact={}):
     """
