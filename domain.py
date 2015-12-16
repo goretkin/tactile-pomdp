@@ -12,6 +12,7 @@ def rot_SO2(theta):
        [-np.sin(theta), np.cos(theta)]]
     return np.array(rot)
 
+
 class Discretization():
     def __init__(self, domain):
         self.domain = domain
@@ -136,6 +137,12 @@ class PlanarPolygonObjectInCorner():
         return np.dot(self.vertex_list_original,rot) + np.array([x,y])
 
     def transform_object_point_to_jig_frame(self, pose, points):
+        """
+        take a point expressed in the object frame
+        return the point expressed in the jig frame
+
+        pose is the pose of the object expressed in the jig frame
+        """
         x, y, theta = pose
         rot = rot_SO2(theta)
 
@@ -464,10 +471,23 @@ def plot_obj(obj,ax=None,kwline={},kwcontact={}):
 
     return plotted
 
+def jig_corner_pose_relative(obj_pose_in_jig_frame, obj_pose=(0,0,0),):
+    if obj_pose != (0,0,0):
+        raise NotImplementedError()
+
+    x, y, angle = obj_pose_in_jig_frame
+    x_, y_ = np.dot(np.array([0, 0])  - [x, y], rot_SO2(-angle))
+    a_ = -angle
+    return (x_, y_, a_)
+
+
 def plot_jig_relative(obj, ax, obj_pose=(0,0,0), kwline={}, kwcontact={}):
     """
     obj_pose is the pose that the object is made to appear at, and the jig ploted relative to it
     """
+    if obj_pose != (0,0,0):
+        raise NotImplementedError()
+
     jig_vertices = np.array([[5.0, 0.0], [0.0, 0.0], [0.0, 5.0]])
     x, y, angle = obj.get_pose()
 
