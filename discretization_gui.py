@@ -122,34 +122,6 @@ class Browse():
         self.current_xy_list = self.free_states_plot_xy_snap_dict[t]
         self.index_into = 0
 
-        if False:
-            if self.frame=="jig":
-                # in the jig frame, the discretization is uniform, and we can find the nearest configurations
-                # by rounding
-                if t not in self.free_states_plot_xy_snap_dict:
-                    return
-
-                pose = self.free_states_plot_xy_snap_dict[t][0]
-                self.domain.set_pose(pose)
-                self.redraw_domain()
-
-                self.current_xy_list = self.free_states_plot_xy_snap_dict[t]
-                self.index_into = 0
-
-            elif self.frame=="object":
-                # the mouse position is relative to an object centered at (0,0)
-                # with theta=0
-
-                # find the closest state (x,y)
-                d = self.free_states_object[:,0:2] - xydata
-
-                distances = np.sqrt(d[:,0]**2 + d[:,1]**2)
-                closest_i = np.argmin(distances)
-
-                # plot it
-                self.domain.set_pose(self.discretization.free_states[closest_i])
-                self.redraw_domain()
-
 def make_oriented_segments(states, r):
     """
     `states` is a length-n indexable of states (x, y, theta)
