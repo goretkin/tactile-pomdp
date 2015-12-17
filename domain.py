@@ -35,8 +35,9 @@ class Discretization():
         # to do nearest neighbors (at least for x,y)
         self.regular_grid_in_frame = None
 
+    # TODO: generate contact manifolds
     def discretize_regular_grid_object_frame(self):
-        self.regular_grid_in = "object"
+        self.regular_grid_in_frame = "object"
 
         #find box bounds for the regular grid
         #that covers at least as much area as would the original grid in the jig frame
@@ -84,7 +85,7 @@ class Discretization():
 
 
     def discretize(self):
-        self.regular_grid_in = "jig"
+        self.regular_grid_in_frame = "jig"
 
         #discretize contact manifolds
         bottom_edge_states = []
