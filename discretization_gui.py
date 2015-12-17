@@ -30,22 +30,26 @@ class Browse():
         self.frame = frame
         self.otherdraw = otherdraw #callback to call when pose has been updated
 
-        self.free_states_xy_dict = defaultdict(list)
-
-        for state in discretization.free_states:
-            t = tuple(np.round(state[0:2]/discretization.delta_xy))
-            self.free_states_xy_dict[t].append(state)
-
-        for t in self.free_states_xy_dict.keys():
-            self.free_states_xy_dict[t].sort(key=lambda (x): x[2])
-
-        self.to_remove = []
-        self.current_xy_list = None
-        self.index_into = None
+        # in whichever frame the states are printed in, chunk them
+        # into neighborhoods of discretization.delta_xy size
+        # this chunking is exact when self.frame == self.regular_grid_in_frame
+        # the values of this dictionary are states: the pose of the object expressed in the jig frame.
+        self.free_states_plot_xy_snap_dict = defaultdict(list)
 
         # free configurations of the jig in object frame
         self.free_states_object = np.array(map(jig_corner_pose_relative, self.discretization.free_states))
 
+        for (plot_state, state) in zip( (discretization.free_states if frame=="jig" else self.free_states_object), discretization.free_states ):
+            t = tuple(np.round(plot_state[0:2]/discretization.delta_xy))
+            self.free_states_plot_xy_snap_dict[t].append(state)
+
+        # sort by angle within a chunk
+        for t in self.free_states_plot_xy_snap_dict.keys():
+            self.free_states_plot_xy_snap_dict[t].sort(key=lambda (x): x[2])
+
+        self.to_remove = []
+        self.current_xy_list = None
+        self.index_into = None
 
     def update_figure(self):
         for item in self.to_remove:
@@ -59,7 +63,6 @@ class Browse():
             )
 
     def redraw_domain(self):
-        print("len self to remove", len(self.to_remove))
         if len(self.to_remove) == 0:
             #on first go, draw the canvas
             print("draw canvas!")
@@ -91,6 +94,10 @@ class Browse():
         self.redraw_domain()
 
     def on_click(self, event):
+        #allow q e keys to work elsewhere
+        self.index_into = None
+        self.current_xy_list = None
+
         xydata = (event.xdata, event.ydata)
         if xydata == (None, None):
             self.index_into = None
@@ -105,32 +112,43 @@ class Browse():
 
         t = tuple(map(int, np.round(np.array(xydata) / discretization.delta_xy)))
 
-        if self.frame=="jig":
-            # in the jig frame, the discretization is uniform, and we can find the nearest configurations
-            # by rounding
-            if t not in self.free_states_xy_dict:
-                return
+        if t not in self.free_states_plot_xy_snap_dict:
+            return
 
-            pose = self.free_states_xy_dict[t][0]
-            self.domain.set_pose(pose)
-            self.redraw_domain()
+        pose = self.free_states_plot_xy_snap_dict[t][0]
+        self.domain.set_pose(pose)
+        self.redraw_domain()
 
-            self.current_xy_list = self.free_states_xy_dict[t]
-            self.index_into = 0
+        self.current_xy_list = self.free_states_plot_xy_snap_dict[t]
+        self.index_into = 0
 
-        elif self.frame=="object":
-            # the mouse position is relative to an object centered at (0,0)
-            # with theta=0
+        if False:
+            if self.frame=="jig":
+                # in the jig frame, the discretization is uniform, and we can find the nearest configurations
+                # by rounding
+                if t not in self.free_states_plot_xy_snap_dict:
+                    return
 
-            # find the closest state (x,y)
-            d = self.free_states_object[:,0:2] - xydata
+                pose = self.free_states_plot_xy_snap_dict[t][0]
+                self.domain.set_pose(pose)
+                self.redraw_domain()
 
-            distances = np.sqrt(d[:,0]**2 + d[:,1]**2)
-            closest_i = np.argmin(distances)
+                self.current_xy_list = self.free_states_plot_xy_snap_dict[t]
+                self.index_into = 0
 
-            # plot it
-            self.domain.set_pose(self.discretization.free_states[closest_i])
-            self.redraw_domain()
+            elif self.frame=="object":
+                # the mouse position is relative to an object centered at (0,0)
+                # with theta=0
+
+                # find the closest state (x,y)
+                d = self.free_states_object[:,0:2] - xydata
+
+                distances = np.sqrt(d[:,0]**2 + d[:,1]**2)
+                closest_i = np.argmin(distances)
+
+                # plot it
+                self.domain.set_pose(self.discretization.free_states[closest_i])
+                self.redraw_domain()
 
 def make_oriented_segments(states, r):
     """
