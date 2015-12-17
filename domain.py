@@ -31,7 +31,61 @@ class Discretization():
         self.ys = np.arange(self.ymin, self.ymax, self.delta_xy)
         self.rs = np.arange(self.rmin, self.rmax, self.delta_r)
 
+        # if this is a regular grid in some frame, then it's a lot easier
+        # to do nearest neighbors (at least for x,y)
+        self.regular_grid_in_frame = None
+
+    def discretize_regular_grid_object_frame(self):
+        self.regular_grid_in = "object"
+
+        #find box bounds for the regular grid
+        #that covers at least as much area as would the original grid in the jig frame
+        grid = itertools.product(self.xs, self.ys, self.rs)
+
+        constellation = map(lambda x: jig_corner_pose_relative(x), grid)
+        constellation = np.array(constellation)
+
+        self.xmin_object = np.min(constellation[:,0])
+        self.xmax_object = np.max(constellation[:,0])
+        self.ymin_object = np.min(constellation[:,1])
+        self.ymax_object = np.max(constellation[:,1])
+
+        def outward_round_interval(mini, maxi, step):
+            # given an interval I=[mini, maxi] round it outward so that
+            # [a*step, b*step] superset I for integer a,b
+
+            return (np.int(np.floor(mini/float(step))) * step,
+                    np.int(np.ceil(maxi/float(step))) * step)
+
+        #round toward the outward-most multiple of delta_xy
+        self.xmin_object, self.xmax_object = outward_round_interval(self.xmin_object, self.xmax_object, self.delta_xy)
+        self.ymin_object, self.ymax_object = outward_round_interval(self.ymin_object, self.ymax_object, self.delta_xy)
+
+        # rotation should be the same, but for the same of consistency.
+
+        self.xs_object = np.arange(self.xmin_object, self.xmax_object, self.delta_xy)
+        self.ys_object = np.arange(self.ymin_object, self.ymax_object, self.delta_xy)
+        self.rs_object = self.rs
+
+        free_states = []
+        progressbar = ProgressBar(len(self.xs_object) * len(self.ys_object) * len(self.rs_object))
+        for i, (x, y, r) in enumerate(itertools.product(self.xs_object, self.ys_object, self.rs_object)):
+            self.domain.set_pose_of_jig_relative_to_object((x, y, r))
+
+            #arbitrary amount of "not too much penetration"
+            if self.domain.penetration() < self.delta_xy/2.0:
+                free_states.append(self.domain.get_pose())
+            progressbar.animate(i+1)
+
+        self.bottom_edge_states = [] # np.array(bottom_edge_states)
+        self.left_edge_states = [] # np.array(left_edge_states)
+        self.corner_states = [] # np.array(corner_states)
+        self.free_states = np.array(free_states)
+
+
     def discretize(self):
+        self.regular_grid_in = "jig"
+
         #discretize contact manifolds
         bottom_edge_states = []
         progressbar = ProgressBar(len(self.xs)*len(self.rs))
@@ -109,9 +163,19 @@ class PlanarPolygonObjectInCorner():
         self.restore()
 
     def set_pose(self,pose):
+        # pose of object expressed in jig frame
         self.restore()
         self.move(*pose)
-        
+
+    def set_pose_of_jig_relative_to_object(self, pose):
+        x, y, angle = pose
+        rot = rot_SO2(angle)
+
+        x_, y_ = -np.dot(np.array([x, y]), rot_SO2(-angle))
+        a_ = -angle
+
+        self.set_pose((x_, y_, a_))
+
     def get_pose(self):
         return self.pose  
         
@@ -163,7 +227,7 @@ class PlanarPolygonObjectInCorner():
         else:
             raise ValueError("not a point and not a list of points")
         return np.dot(points_np,rot) + np.array([x,y])
-        
+
     def restore(self):
         self.pose = np.array([0,0,0])
         self.vertex_list = np.copy(self.vertex_list_original)

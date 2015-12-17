@@ -12,7 +12,8 @@ po = PlanarPolygonObjectInCorner(vertex_list=shape_vertex_list)
 
 
 discretization = Discretization(po)
-discretization.discretize()
+#discretization.discretize()
+discretization.discretize_regular_grid_object_frame()
 
 free_states = discretization.free_states
 bottom_edge_states = discretization.bottom_edge_states
