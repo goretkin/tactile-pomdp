@@ -510,7 +510,7 @@ if False:
     #s/\.Get\(.\)\(.\{-\}\)()/.\L\1\l\2/g
 else:
     #modified to always import this, regardless of settings
-    #from pyqt4_framework_two_views import  ##why this isn't the same, I cannot tell.
+    #from pyqt4_framework_two_views import  ##why this isn't the same as the __import__ below, I cannot tell.
     #framework_module = Pyqt4Framework
     framework_module=__import__('pyqt4_framework_two_views', fromlist=['Pyqt4Framework'])
     Framework=getattr(framework_module, '%sFramework' % fwSettings.backend.capitalize())
