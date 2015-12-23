@@ -92,9 +92,7 @@ def mpl_plot_b2Fixture(ax,fixture,transform,mpl_kwargs={}):
 
 
 class Dynamics():
-    def __init__(self,world=None,gripper_direct_control=False):
-        self.gripper_direct_control = gripper_direct_control
-
+    def __init__(self,world=None,):
         if world is None:
             self.world = Box2D.b2World(gravity=(0,0), doSleep=True)
         else:
@@ -251,7 +249,7 @@ class PlaceObject(Framework):
 
     def install_dynamics(self):
         #will write over existing dynamics if any.
-        self.dynamics = Dynamics(world=self.world, gripper_direct_control=True)
+        self.dynamics = Dynamics(world=self.world)
 
 
     def Keyboard(self, key):
@@ -302,8 +300,6 @@ class PlaceObject(Framework):
         timeStep = 1.0/settings.hz #might not be the actual time step.
         self.simtime += timeStep
 
-        if not self.dynamics.gripper_direct_control:
-            self.dynamics.gripper_rotation_control.solve()
         self.dynamics.step_grasp()
 
         #do physics and conventional plotting
@@ -372,28 +368,6 @@ class PlaceObject(Framework):
         def vint(a):
             return tuple([int(x) for x in a])
 
-        #draw gripper setpoint
-        if not self.dynamics.gripper_direct_control:
-            if self.renderer: 
-                self.renderer.DrawCircle(phy2pix(self.dynamics.gripper_translation_control.target),
-                    10.0/self.world.renderer.zoom,
-                    b2Color(1,1,1),
-                    )
-
-
-
-            r = 10.0
-            a = self.dynamics.gripper_rotation_control.target
-            if self.renderer:
-                self.renderer.DrawCircle(
-                    vint(add(
-                        phy2pix(self.dynamics.gripper_translation_control.target),
-                        (r*np.cos(-a), r*np.sin(-a)) 
-                        )),
-                    3.0/self.world.renderer.zoom,
-                    b2Color(0,1,1),
-                    )
-
         for f in self.callbacks_after:
             f()
 
@@ -439,7 +413,7 @@ if __name__=="__main__":
     domain.callbacks_before.append( controller.senseact )
 
     d = domain.dynamics
-    s = Dynamics(gripper_direct_control=True)
+    s = Dynamics()
 
 
     def run_from_ipython():
