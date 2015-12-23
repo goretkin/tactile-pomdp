@@ -30,7 +30,6 @@ from matplotlib.patches import Polygon as mplPolygon
 import matplotlib as mpl
 
 import threading
-import asyncio
 
 class ForceSensor:
     def __init__(self,body,hand):
@@ -104,87 +103,63 @@ class Dynamics():
         # Initialize all of the objects
         self.world.gravity = (0,0)
 
+        duplo_unit_in_m = 0.0636 # the side length of a  2x2 Duplo brick 
+
+        #all measurements are 10 times what they are in real life
+        #because of the tolerances built into Box2D
+        thickness_walls = 10 * 1 * duplo_unit_in_m
+        length_walls = 10 * 14 * duplo_unit_in_m
+
         # And a static body to hold the ground shape
         self.ground_body = self.world.CreateStaticBody(
             position=(0.0,0.0),
-            shapes=b2.polygonShape(box=(5.0,.1)),
+            shapes=b2.polygonShape(box=(length_walls/2.0, thickness_walls/2.0)),
             )
 
-        
+
+
         shape = b2.polygonShape();
-        shape.SetAsBox(.1, 5.0, (-5.,5.), 0.0 )
+        shape.SetAsBox(thickness_walls/2.0, length_walls/2.0, (-length_walls/2.0+thickness_walls/2.0,length_walls/2.0-0.5*thickness_walls), 0.0 )
         self.env_fixture_left = self.ground_body.CreateFixture(b2FixtureDef(shape=shape), density=0.0) #no density for static body
 
-        shape = b2.polygonShape();
-        shape.SetAsBox(.1, 5.0, (5.,5.), 0.0 )
-        self.env_fixture_right = self.ground_body.CreateFixture(b2FixtureDef(shape=shape), density=0.0) #no density for static body
+        if False:
+            shape = b2.polygonShape();
+            shape.SetAsBox(thickness_walls/2.0, length_walls/2.0, (length_walls/2.0-thickness_walls/2.0,length_walls/2.0-0.5*thickness_walls), 0.0 )
+            self.env_fixture_right = self.ground_body.CreateFixture(b2FixtureDef(shape=shape), density=0.0) #no density for static body
 
-        shape = b2.polygonShape();
-        shape.SetAsBox(5.0, .1, (0.,10.), 0.0 )
-        self.env_fixture_top = self.ground_body.CreateFixture(b2FixtureDef(shape=shape), density=0.0) #no density for static body
+            shape = b2.polygonShape();
+            shape.SetAsBox(length_walls/2.0, thickness_walls/2.0, (0.,length_walls-thickness_walls), 0.0 )
+            self.env_fixture_top = self.ground_body.CreateFixture(b2FixtureDef(shape=shape), density=0.0) #no density for static body
 
 
-        #not used when gripper_direct_control==True, should move into if-block
-        self.grasp_pivot_body = self.world.CreateDynamicBody(position=(0.0,5.0))
-        self.grasp_pivot_body.fixedRotation = True
-
-        self.use_force_torque = False
-        self.ft_sensor = None
-
-        if self.use_force_torque:
-            self.grasp_body_before_ft = self.world.CreateDynamicBody(position=(0.0,5.0), angle=0.0)
-            self.grasp_fixture_before_ft = self.grasp_body_before_ft.CreatePolygonFixture(box=(.1,.1), density=1.0) #density is required so that torques make the body rotate.
-            self.grasp_fixture_before_ft.sensor = True #it doesn't collide with anything
+        # take advantage of rendering code and mouse selection code to visualize setpoint
+        self.setpoint_body = self.world.CreateKinematicBody(position=(0.0,5.0), angle=0.0)
+        self.setpoint_fixture = self.setpoint_body.CreatePolygonFixture(box=(.1,.1), density=0.0)
+        self.setpoint_fixture.sensor = True #it doesn't collide with anything
 
         self.grasp_body = self.world.CreateDynamicBody(position=(0.0,5.0), angle=0.0)
-        self.grasp_fixture = self.grasp_body.CreatePolygonFixture(box=(.2,.2), density=100.0) #density is required so that torques make the body rotate.
+        self.grasp_fixture = self.grasp_body.CreatePolygonFixture(box=(.2,.2), density=20.0) #density is required so that torques make the body rotate.
         self.grasp_fixture.sensor = True #it doesn't collide with anything
 
-        if self.gripper_direct_control:
-            #we will velocity/position/force control this ourselves
-            self.grasp_body.gravityScale = 0.0 
+        # in the version of Box2D in PyBox2D, these both need to be less than 1/dt
+        # otherwise the explicit-euler approximation isn't stable and gets clamped to 0.
+        # in most recent version, they use implicit euler.
+        self.grasp_body.linearDamping = 20.0
+        self.grasp_body.angularDamping = 50.0
 
-            if False:
-                #forces on the order of manipuland weight
-                #don't move this body because it's so massive and viscous.
-                self.grasp_body.mass = 1e10
-                self.grasp_body.inertia = 1e10
-            else:
-                self.grasp_body.mass = 1e0
-                self.grasp_body.inertia = 1e0 
+        self.robot_coloumb_friction = self.world.CreateFrictionJoint(bodyA=self.grasp_body, bodyB=self.ground_body)
+        self.robot_coloumb_friction.maxForce = 0.0
+        self.robot_coloumb_friction.maxTorque = 0.0
 
-            #if we do get it going with some velocity, make sure it dies fast
-            #self.grasp_body.linearDamping = 1e5
-            #self.grasp_body.angularDamping = 1e5
-        else:
-            #translation controller for the gripper
-            self.gripper_translation_control = self.world.CreateMouseJoint(
-                bodyA=self.ground_body,
-                bodyB=self.grasp_pivot_body, 
-                target=self.grasp_body.position,
-                maxForce=1000.0*self.grasp_body.mass
-                )
-
-            self.gripper_translation_control.dampingRatio = 5
-
-            self.grasp_pivot_joint = self.world.CreateRevoluteJoint(
-                bodyA=self.grasp_pivot_body,
-                bodyB=self.grasp_body_before_ft if self.use_force_torque else self.grasp_body,
-                anchor=self.grasp_pivot_body.worldCenter)
-
-            if self.use_force_torque:
-                self.ft_sensor = ForceSensor(self.grasp_body_before_ft,self.grasp_body)
-                
-
-            self.gripper_rotation_control = AngleJoint(self.grasp_pivot_joint)
 
         # Create a dynamic body
         self.manipuland_body=self.world.CreateDynamicBody(position=(0.0,5.0), angle=0)
 
         # And add a box fixture onto it (with a nonzero density, so it will move)
-        self.manipuland_fixture=self.manipuland_body.CreatePolygonFixture(box=(.8,.4), density=.1, friction=3.3)
+        manipulandum_length = 10 * 2 * duplo_unit_in_m
+        manipulandum_width = 10 * 3 * duplo_unit_in_m
+        self.manipuland_fixture=self.manipuland_body.CreatePolygonFixture(box=(manipulandum_length/2.0, manipulandum_width/2.0), density=.1, friction=3.3) #this is contact friction, not top-down friction
 
-        #self.grasp_rotate_joint = self.world.CreateRevoluteJoint(bodyA=self.grasp_body, bodyB=self.manipuland_body, anchor=self.grasp_body.worldCenter)
         self.grasp_slip_joint = None
 
         #need to recreate grasp_slip joint for changes to take effect
@@ -196,16 +171,7 @@ class Dynamics():
 
         self.create_grasp_slip_joint()
         self.grasp_center = None
-
-        self.sample_manipuland_in_hand_rejection_iterations = None
         
-    def update_sample_manipuland_in_hand_rejection(self,iterations):
-        if self.sample_manipuland_in_hand_rejection_iterations is None:
-            self.sample_manipuland_in_hand_rejection_iterations = iterations
-        else:
-            self.sample_manipuland_in_hand_rejection_iterations = (
-                .98 * self.sample_manipuland_in_hand_rejection_iterations +
-                .02 * iterations)
 
     def step_grasp(self):
         if self.grasp_slip_joint is not None and (not self.noslip):
@@ -233,75 +199,6 @@ class Dynamics():
             else:
                 self.grasp_slip_joint.SetAnchor(self.grasp_center)
 
-
-
-
-
-    def sample_manipuland_in_hand(self,not_collide_ground=True):
-        gripper_shape = self.grasp_fixture.shape
-
-        manipuland_shape = self.manipuland_fixture.shape
-
-
-        manipuland_radius = np.max(
-                                np.linalg.norm( 
-                                    np.array(self.manipuland_fixture.shape.vertices) - [0,0],
-                                    axis=1))
-
-        b2I = Box2D.b2Transform()
-        b2I.SetIdentity()
-
-        #grow out AABB for gripper by radius of manipuland
-        aabb = self.grasp_fixture.shape.getAABB(b2I,0)
-
-        aabb.lowerBound += (-manipuland_radius,-manipuland_radius)
-        aabb.upperBound += (manipuland_radius,manipuland_radius)
-
-
-        delta = (aabb.upperBound - aabb.lowerBound)
-
-        for i in range(1000):
-            xy = aabb.lowerBound +  (delta[0] * random.random(), delta[1] * random.random())
-            theta = Box2D.b2Rot(random.random() * 2*np.pi)
-
-            manipuland_proposal_transform = Box2D.b2Transform(xy,theta)
-
-
-            t2 = self.grasp_body.transform
-            t1 = manipuland_proposal_transform
-
-            pos = t1.position+t2.position
-            ang = t1.angle + t2.angle
-
-            t = Box2D.b2Transform(pos,Box2D.b2Rot(ang))
-            #t dictates the world-relative position of the box
-
-            ground_fixture = self.ground_body.fixtures[0]
-            accept = ( Box2D.b2TestOverlap(manipuland_shape,0,
-                                        gripper_shape,0,
-                                        manipuland_proposal_transform,
-                                        b2I)
-                        and not
-                        #if there are more obstacles in the world, this doesn't handle it yet
-                        Box2D.b2TestOverlap(manipuland_shape,0,
-                            ground_fixture.shape,0,
-                            t,
-                            self.ground_body.transform 
-                            ) )
-
-            if accept:
-                #t * vec first rotates by t.angle then translates by t.position
-
-                #compose the two transforms together
-                #t = self.grasp_body.transform * manipuland_proposal_transform 
-
-
-                self.update_sample_manipuland_in_hand_rejection(i)
-
-                return t
-
-
-        raise AssertionError('Rejection Sampling Failed')
 
 
     def create_grasp_slip_joint(self):
@@ -365,16 +262,10 @@ class PlaceObject(Framework):
 
         keymove = {Keys.K_w:(0,0.05),Keys.K_s:(0,-0.05),Keys.K_a:(-0.05,0),Keys.K_d:(0.05,0)}
 
-
         if key in keymove:
             dx,dy = keymove[key]
             
-            if not self.dynamics.gripper_direct_control:                
-                self.dynamics.gripper_translation_control.target += (dx,dy)
-            else:
-                self.dynamics.grasp_body.linearVelocity += b2Vec2(dx,dy)
-                #p = self.dynamics.grasp_body.position 
-                #self.dynamics.grasp_body.ApplyLinearImpulse((5*dx,5*dy),p,True)
+            self.dynamics.setpoint_body.linearVelocity += b2Vec2(dx,dy)
 
         elif key == Keys.K_g:
             if self.dynamics.grasp_slip_joint is None:
@@ -384,58 +275,11 @@ class PlaceObject(Framework):
 
         elif key in [Keys.K_q, Keys.K_e]:
             s = +1 if key==Keys.K_q else -1
-
-            if not self.dynamics.gripper_direct_control:
-                self.dynamics.gripper_rotation_control.target += .1 * s
-            else:
-                self.dynamics.grasp_body.angularVelocity += .1 * s
+            self.dynamics.setpoint_body.angularVelocity += .1 * s
         
         elif key == Keys.K_b:
-            self.dynamics.grasp_body.linearVelocity = b2Vec2(0,0)
-            self.dynamics.grasp_body.angularVelocity = 0
-
-        body_store = [self.dynamics.manipuland_body]
-        #body_store = self.world.bodies
-        if key == Keys.K_p:
-            for body in body_store:
-                self.memory[body] = {}
-                self.memory[body]['pos']=body.position.__copy__()
-                self.memory[body]['linvel']=body.linearVelocity.__copy__()
-                self.memory[body]['angle']=body.angle
-                self.memory[body]['angvel']=body.angularVelocity
-
-            if self.dynamics.grasp_slip_joint is not None:
-                self.memory['grasp_slip_lin'] = self.dynamics.grasp_slip_joint.GetLinearImpulse()
-                self.memory['grasp_slip_ang'] = self.dynamics.grasp_slip_joint.GetAngularImpulse()
-
-        elif key == Keys.K_o:
-            for body in body_store:
-                if body in self.memory:
-                    body.position = self.memory[body]['pos']
-                    body.linearVelocity = self.memory[body]['linvel']
-                    body.angle = self.memory[body]['angle']
-                    body.angularVelocity = self.memory[body]['angvel']
-                else:
-                    print('not in memory: ', body)
-
-            if self.dynamics.grasp_slip_joint is not None:
-                self.dynamics.grasp_slip_joint.SetLinearImpulse( self.memory['grasp_slip_lin'])
-                self.dynamics.grasp_slip_joint.SetAngularImpulse( self.memory['grasp_slip_ang'])
-
-
-        elif key == Keys.K_t:
-            if self.dynamics.grasp_slip_joint is not None:
-                self.dynamics.grasp_slip_joint.SetAngularImpulse(.5)
-
-        elif key == Keys.K_f:
-            if self.dynamics.grasp_slip_joint is not None:
-                self.dynamics.grasp_slip_joint.SetAngularImpulse(
-                    -1.0 * self.dynamics.grasp_slip_joint.GetAngularImpulse())
-
-        elif key == Keys.K_m:
-            self.dynamics.grasp_body.linearVelocity += b2Vec2(0,1.0)
-        elif key == Keys.K_n:
-            self.dynamics.grasp_body.linearVelocity += b2Vec2(0,-1.0)
+            self.dynamics.setpoint_body.linearVelocity = b2Vec2(0,0)
+            self.dynamics.setpoint_body.angularVelocity = 0
          
     def Step(self, settings):
         """Called upon every step.
@@ -458,37 +302,13 @@ class PlaceObject(Framework):
         timeStep = 1.0/settings.hz #might not be the actual time step.
         self.simtime += timeStep
 
-        if settings.sampleRandomManipulandum:
-            t = self.dynamics.sample_manipuland_in_hand()
-            self.dynamics.manipuland_body.transform = ( t.position,t.angle )
-
         if not self.dynamics.gripper_direct_control:
             self.dynamics.gripper_rotation_control.solve()
         self.dynamics.step_grasp()
-        
-        if self.dynamics.ft_sensor:
-            self.dynamics.ft_sensor.solve()
 
-        #t = self.dynamics.sample_manipuland_in_hand()
-
-        #self.dynamics.manipuland_body.transform = (t.position, t.angle )
-        #self.dynamics.manipuland_body.position = t.position.copy()
-        #self.dynamics.manipuland_body.angle = t.angle
-
-        #self.dynamics.manipuland_body.velocity = (0,0)
-        #self.dynamics.manipuland_body.angularVelocity = 0
-
-        #self.renderer.flags['drawShapes'] = True
-        #self.renderer.flags['convertVertices']=isinstance(self.renderer, b2DrawExtended)
-
-        #if self.renderer:
-        #    self.renderer.StartDraw()
-
-        #self.world.DrawDebugData()
         #do physics and conventional plotting
         super(PlaceObject, self).Step(settings)
 
-        #self.Print(str(self.dynamics.sample_manipuland_in_hand_rejection_iterations))
 
         self.forcetorque_measurement = (0.,0.,0.)
 
@@ -541,8 +361,10 @@ class PlaceObject(Framework):
                         phy2pix(c + .2 * self.dynamics.manipuland_body.linearVelocity ),
                         b2Color(.5,.5,0)
                         )
-
-
+        self.window.graphicsViewAlternate.resetTransform()
+        self.window.graphicsViewAlternate.centerOn(*self.dynamics.manipuland_body.position)
+        self.window.graphicsViewAlternate.rotate(np.rad2deg(self.dynamics.manipuland_body.angle))
+        self.window.graphicsViewAlternate.scale(25.0,-25.0)
 
         def add(a,b):
             return tuple( [x+y for (x,y) in zip(a,b)] )
@@ -612,7 +434,7 @@ if __name__=="__main__":
     #domain.run()
     domain.run_init()
 
-    from controller import Controller
+    from controller_cleanup import Controller
     controller = Controller(domain)
     domain.callbacks_before.append( controller.senseact )
 

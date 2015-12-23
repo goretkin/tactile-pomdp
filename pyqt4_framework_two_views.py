@@ -434,6 +434,10 @@ class MainWindow(QtGui.QMainWindow,Ui_MainWindow):
         self.scene.setBackgroundBrush( QtGui.QBrush(QtGui.QColor(0,0,0)) )
         self.graphicsView.setScene(self.scene)
         self.graphicsView.scale(self.test.viewZoom, -self.test.viewZoom)
+
+        self.graphicsViewAlternate.setScene(self.scene)
+        self.graphicsViewAlternate.scale(self.test.viewZoom, -self.test.viewZoom)
+
         self.reset_properties_list()
         self.restoreLayout()
 
