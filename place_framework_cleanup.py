@@ -105,15 +105,15 @@ class Dynamics():
 
         #all measurements are 10 times what they are in real life
         #because of the tolerances built into Box2D
-        thickness_walls = 10 * 1 * duplo_unit_in_m
-        length_walls = 10 * 14 * duplo_unit_in_m
+        self.simulation_scale = 10
+
+        thickness_walls = self.simulation_scale * 1 * duplo_unit_in_m
+        length_walls = self.simulation_scale * 14 * duplo_unit_in_m
 
         # And a static body to hold the ground shape
         self.ground_body = self.world.CreateStaticBody(
             position=(0.0,0.0),
-            shapes=b2.polygonShape(box=(length_walls/2.0, thickness_walls/2.0)),
-            )
-
+            shapes=b2.polygonShape(box=(length_walls/2.0, thickness_walls/2.0)),            )
 
 
         shape = b2.polygonShape();
@@ -154,8 +154,8 @@ class Dynamics():
         self.manipuland_body=self.world.CreateDynamicBody(position=(0.0,5.0), angle=0)
 
         # And add a box fixture onto it (with a nonzero density, so it will move)
-        manipulandum_length = 10 * 2 * duplo_unit_in_m
-        manipulandum_width = 10 * 3 * duplo_unit_in_m
+        manipulandum_length = self.simulation_scale * 2 * duplo_unit_in_m
+        manipulandum_width = self.simulation_scale * 3 * duplo_unit_in_m
         self.manipuland_fixture=self.manipuland_body.CreatePolygonFixture(box=(manipulandum_length/2.0, manipulandum_width/2.0), density=.1, friction=3.3) #this is contact friction, not top-down friction
 
         self.grasp_slip_joint = None
@@ -415,6 +415,12 @@ if __name__=="__main__":
     d = domain.dynamics
     s = Dynamics()
 
+    import ros_interface
+
+    dp = ros_interface.DomainPublisher(domain, controller)
+    ros_interface.init_publisher_node()
+
+    domain.callbacks_after.append( dp.publish )
 
     def run_from_ipython():
         try:
