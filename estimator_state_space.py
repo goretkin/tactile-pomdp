@@ -79,11 +79,11 @@ class StateSpace(object):
         self.object_half_width = object_half_width
         
         self.extent_grid = int(np.ceil(self.extent/self.d_xy))
-        object_half_width_grid = int(np.ceil(object_half_width/d_xy)) # change to floor if you want some jig points slightly penetrating the object
+        self.object_half_width_grid = int(np.ceil(object_half_width/d_xy)) # change to floor if you want some jig points slightly penetrating the object
         
         self.discretization_free = np.concatenate(
-            [np.arange(-self.extent_grid, -object_half_width_grid+1),
-            np.arange(object_half_width_grid, self.extent_grid+1)]) * d_xy
+            [np.arange(-self.extent_grid, -self.object_half_width_grid+1),
+            np.arange(self.object_half_width_grid, self.extent_grid+1)]) * d_xy
         
         # negative positions have a +1 direction, and vice versa
         self.n_directions = 2
@@ -138,9 +138,9 @@ class StateSpace(object):
 
         # return affine combination of states
         # interpolating x when x is outside the extent puts all of the mass in the void.
-        if np.abs(x) >= self.extent+self.d_xy/2.0:
+        if np.abs(x) >= self.extent_grid * self.d_xy:
             return [(1.0, State(DirectionStateFactor(d), VoidStateFactor()) )]
-        elif np.abs(x) <= self.object_half_width:
+        elif np.abs(x) <= self.object_half_width_grid * self.d_xy:
             #raise NotImplementedError() #This might actually just need to be an error
             return [(1.0, State(DirectionStateFactor(d), ContactStateFactor()) )]
         else:
