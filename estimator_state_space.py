@@ -94,16 +94,24 @@ class StateSpace(object):
         self.manifold_1d = set()
         self.manifold_0d = set()
         
+        self.ordered_states = []
+
         for d in [DirectionStateFactor(-1), DirectionStateFactor(+1)]:
-            self.manifold_0d.add( State(d, ContactStateFactor()) )
-            self.manifold_0d.add( State(d, VoidStateFactor()) )
+            for s in [State(d, ContactStateFactor()), State(d, VoidStateFactor())]:
+                self.manifold_0d.add(s)
+                self.ordered_states.append(s)
 
         for i in range(len(self.discretization_free)):
-            self.manifold_1d.add(
-                State(DirectionStateFactor(-np.sign(self.discretization_free[i])),
-                        MetricStateFactor(i)))
+            s =  State(DirectionStateFactor(-np.sign(self.discretization_free[i])),
+                        MetricStateFactor(i))
+
+            self.manifold_1d.add(s)
+            self.ordered_states.append(s)
 
         self.states = set.union(self.manifold_1d, self.manifold_0d)
+
+        self.state_to_id = {s:i for (i,s) in enumerate(self.ordered_states)}
+        self.id_to_state = {i:s for (i,s) in enumerate(self.ordered_states)} # just for symmetry's sake.
             
             
     def to_continuous(self, state, frame="object"):
@@ -163,4 +171,11 @@ class StateSpace(object):
                 else:
                     return [ (1.0, b_state) ]
 
-        
+
+hashmap = {}
+for s in StateSpace().states:
+    if hashmap.has_key(hash(s)):
+        print("hash Collision: %s: %s"%(s, hashmap[hash(s)]))
+    else:
+        hashmap[hash(s)] = s
+

@@ -1,5 +1,6 @@
 import numpy as np
 from collections import defaultdict
+import json
 
 from estimator_state_space import State
 
@@ -11,7 +12,7 @@ def belief_factory(state_space):
             # if `delta` is set, create a Belief that has all probability mass concentrated on state `delta`
             self.state_space = state_space
             
-            self.p = defaultdict(lambda: 0) # keys are states
+            self.clear()
 
             if delta is not None:
                 if isinstance(delta, State):
@@ -19,6 +20,9 @@ def belief_factory(state_space):
                 else:
                     raise ValueError(delta)
         
+        def clear(self):
+            self.p = defaultdict(lambda: 0) # keys are states
+
         def prob(self, state):
             if state not in self.state_space.states:
                 raise ValueError(state)
@@ -211,5 +215,17 @@ def belief_factory(state_space):
             for s in set.union(set(b1.nonzero_states()), set(b2.nonzero_states())):
                 b.p[s] = b1.p[s] - b2.p[s]
             return b
+
+        def to_json_string(self):
+            d = {self.state_space.state_to_id[s]:self.p[s] for s in self.p.keys()}
+            return json.dumps(d)
+
+        def from_json_string(self, s):
+            self.clear()
+            d = json.loads(s)
+
+            for k in d.keys():
+                self[self.state_space.id_to_state[int(k)]] = d[k]
+
 
     return Belief
