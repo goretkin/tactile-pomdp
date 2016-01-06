@@ -12,6 +12,7 @@ Panels:
         - /Marker1
         - /Marker1/Namespaces1
         - /WrenchStamped1
+        - /action twist1
       Splitter Ratio: 0.5
     Tree Height: 440
   - Class: rviz/Selection
@@ -67,6 +68,8 @@ Visualization Manager:
           Value: true
         grasp_translation:
           Value: true
+        jig:
+          Value: true
         object:
           Value: true
         setpoint:
@@ -84,6 +87,8 @@ Visualization Manager:
             {}
           grasp_translation:
             {}
+          jig:
+            {}
           object:
             {}
           setpoint:
@@ -98,20 +103,33 @@ Visualization Manager:
       Marker Topic: /ggrdf/fixtures
       Name: Marker
       Namespaces:
-        box2d_fixtures: true
+        jig_fixture: true
+        object_fixture: true
       Queue Size: 123
       Value: true
     - Alpha: 1
       Arrow Width: 0.06
       Class: rviz/WrenchStamped
       Enabled: true
-      Force Arrow Scale: 0.05
+      Force Arrow Scale: 0.001
       Force Color: 165; 51; 204
       History Length: 1
       Name: WrenchStamped
       Topic: /force_torque
       Torque Arrow Scale: 0.01
       Torque Color: 204; 204; 51
+      Value: true
+    - Alpha: 1
+      Arrow Width: 0.1
+      Class: rviz/WrenchStamped
+      Enabled: true
+      Force Arrow Scale: 0.2
+      Force Color: 171; 145; 204
+      History Length: 1
+      Name: action twist
+      Topic: /action_twist_as_wrench
+      Torque Arrow Scale: 0.5
+      Torque Color: 171; 145; 204
       Value: true
   Enabled: true
   Global Options:
@@ -181,5 +199,5 @@ Window Geometry:
   Views:
     collapsed: false
   Width: 1200
-  X: 412
-  Y: 137
+  X: 595
+  Y: 135

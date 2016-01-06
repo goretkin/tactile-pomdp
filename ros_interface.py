@@ -35,6 +35,7 @@ class DomainPublisher(object):
         self.clock_publisher = rospy.Publisher("/clock", rosgraph_msg.Clock, queue_size=1)
         self.viz_markers_publisher = rospy.Publisher("/ggrdf/fixtures", viz_msg.Marker, queue_size=5)
         self.forcetorque_publisher = rospy.Publisher("/force_torque", geom_msg.WrenchStamped, queue_size=1)
+        self.action_twist_publisher = rospy.Publisher("/action_twist", geom_msg.TwistStamped, queue_size=1)
 
         self.tf_broadcaster = tf.TransformBroadcaster()
 
@@ -74,8 +75,13 @@ class DomainPublisher(object):
             "grasp",
             self.world_frame_name)
 
+        # object and jig frames are published for visualization purposes. 
         self.send_transform(self.domain.dynamics.manipuland_body,
             "object",
+            self.world_frame_name)
+
+        self.send_transform(self.domain.dynamics.ground_body,
+            "jig",
             self.world_frame_name)
 
         # if you want to plot a vector expressed in world coordinates,
@@ -107,24 +113,28 @@ class DomainPublisher(object):
                 "compliance_frame",
                 "setpoint_translation")
 
+    def scale_vertices(self, vertices):
+        # if the physics simulator is using scaled units, undo.
+        s = float(self.domain.dynamics.simulation_scale)
+        vertices_scaled = [(x/s, y/s) for (x,y) in vertices]
+        return vertices_scaled
+
 
     def publish_fixtures_shape(self):
         v = self.domain.dynamics.manipuland_fixture.shape.vertices
-        s = float(self.domain.dynamics.simulation_scale)
-        v_scaled = [(x/s, y/s) for (x,y) in v]
-        points = planar_shape_to_point3(v_scaled)
+        points = planar_shape_to_point3(self.scale_vertices(v))
 
         marker = viz_msg.Marker()
         marker.header.frame_id = "object"
         marker.header.stamp = self.get_domain_sim_time()
-        marker.ns = "box2d_fixtures"
+        marker.ns = "object_fixture"
         marker.id = 0 
         marker.type = viz_msg.Marker.LINE_STRIP
         marker.action = viz_msg.Marker.ADD
         marker.pose.orientation.w = 1.0 #identity transform
         marker.scale.x = 0.005
 
-        marker.color.r = 0.0
+        marker.color.r = 1.0
         marker.color.g = 1.0
         marker.color.b = 0.0
         marker.color.a = 1.0
@@ -133,6 +143,30 @@ class DomainPublisher(object):
         marker.lifetime = rospy.Duration(0.1)
 
         self.viz_markers_publisher.publish(marker)
+
+        for i, fixture in enumerate(self.domain.dynamics.ground_body.fixtures):
+            v = fixture.shape.vertices
+            points = planar_shape_to_point3(self.scale_vertices(v))
+
+            marker = viz_msg.Marker()
+            marker.header.frame_id = "jig"
+            marker.header.stamp = self.get_domain_sim_time()
+            marker.ns = "jig_fixture"
+            marker.id = i
+            marker.type = viz_msg.Marker.LINE_STRIP
+            marker.action = viz_msg.Marker.ADD
+            marker.pose.orientation.w = 1.0 #identity transform
+            marker.scale.x = 0.005
+
+            marker.color.r = 0.0
+            marker.color.g = 1.0
+            marker.color.b = 1.0
+            marker.color.a = 1.0
+
+            marker.points = points
+            marker.lifetime = rospy.Duration(0.1)
+
+            self.viz_markers_publisher.publish(marker)
 
 
     def publish_forcetorque(self):
@@ -155,12 +189,31 @@ class DomainPublisher(object):
 
         self.forcetorque_publisher.publish(ws)
 
+    def publish_action_twist(self):
+        v_w = self.domain.dynamics.setpoint_body.linearVelocity
+        w_w = self.domain.dynamics.setpoint_body.angularVelocity
+
+        a = self.domain.dynamics.grasp_body.angle
+        m = tf.transformations.rotation_matrix(-a, [0, 0, 1])[0:2,0:2]
+        m *= (1.0/self.domain.dynamics.simulation_scale)
+        v_g = np.dot(m, v_w)
+
+        v = geom_msg.Vector3(v_g[0], v_g[1], 0)
+        w = geom_msg.Vector3(0, 0, w_w)
+
+        ts = geom_msg.TwistStamped(
+            std_msg.Header(None, self.get_domain_sim_time(), "grasp"),
+            geom_msg.Twist(v,w))
+
+        self.action_twist_publisher.publish(ts)
+
 
     def publish(self):
         self.publish_simtime()
         self.publish_tf()
         self.publish_forcetorque()
         self.publish_fixtures_shape()
+        self.publish_action_twist()
 
 
 

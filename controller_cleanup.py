@@ -126,7 +126,7 @@ class Controller():
             delta = this_forcetorque - self.ref_forcetorque
             self.datalog.append(this_forcetorque)
 
-            if np.linalg.norm(delta[0:2]) > 1e+1 or np.linalg.norm(delta[2]) > 1e+1:
+            if np.linalg.norm(delta[0:2]) > 5.0 or np.linalg.norm(delta[2]) > 1e+1:
                 self.stop()
                 self.state = "nothing"
                 self.stopping_forcetorque = this_forcetorque
