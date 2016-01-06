@@ -67,7 +67,7 @@ def guarded_velocity_factory(state_space, belief_class):
                     
                     contact_position = state_space.object_half_width * -state.direction.d
                     xprime = contact_position - dt*self.velocity
-                    affine_combo = state_space.interpolate((xprime, state.direction.d))
+                    affine_combo = state_space.interpolate((xprime, state.direction.d), snap_to_metric=-np.sign(self.velocity))
                     affine_combo = [(a,Belief(delta=b)) for (a,b) in affine_combo]
                     b_metric = Belief.blend(affine_combo)
                     b_contact = Belief(delta=state)
@@ -84,7 +84,7 @@ def guarded_velocity_factory(state_space, belief_class):
                     #moving toward metric. with probability alpha, stay in the void
                     alpha = 0.9
                     
-                    void_fringe = (state_space.extent+state_space.d_xy/2.0) * -void_direction
+                    void_fringe = (state_space.extent) * void_direction
                     xprime = void_fringe - dt*self.velocity
                     # make sure you don't tunnel through the object
                     side_of_object = np.sign(void_fringe)
@@ -92,7 +92,7 @@ def guarded_velocity_factory(state_space, belief_class):
                     stayed_on_same_side = ( np.sign(void_fringe-object_boundary) == np.sign(xprime-object_boundary) )             
                     
                     if stayed_on_same_side:
-                        affine_combo = state_space.interpolate((xprime, state.direction.d))
+                        affine_combo = state_space.interpolate((xprime, state.direction.d), snap_to_metric=np.sign(self.velocity))
                         affine_combo = [(a,Belief(delta=b)) for (a,b) in affine_combo]
                         b_notvoid = Belief.blend(affine_combo)
                     else:

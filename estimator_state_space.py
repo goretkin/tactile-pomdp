@@ -122,25 +122,32 @@ class StateSpace(object):
         if isinstance(state.displacement, MetricStateFactor):
             return (self.discretization_free[state.displacement.x], state.direction.d)
         elif isinstance(state.displacement, VoidStateFactor):
-            return ((self.extent+self.d_xy/2.0)*-state.direction.d, state.direction.d)
+            return (self.d_xy*self.extent_grid*-state.direction.d, state.direction.d)
         elif isinstance(state.displacement, ContactStateFactor):
-            return (self.object_half_width*-state.direction.d, state.direction.d)
+            return (self.d_xy*self.object_half_width_grid*-state.direction.d, state.direction.d)
 
     def nearest(self, xd, frame="object"):
         items = self.interpolate(xd, frame)
         val, state = max(items, key=lambda x: x[0])
         return state
 
-    def interpolate(self, xd, frame="object"):
+    def interpolate(self, xd, frame="object", snap_to_metric=None):
         x, d = xd # displacement and direction
         if frame != "object":
             raise NotImplementedError()
 
         # return affine combination of states
         # interpolating x when x is outside the extent puts all of the mass in the void.
-        if np.abs(x) >= self.extent_grid * self.d_xy:
+        # interpolating x when x in inside the object_half_width puts all the mass in the contact
+        # the exception to the above comes with snap_to_metric, which is basically populated
+        # with the direction the jig is moving in. e.g. if you're moving toward the right, you're not allowed
+        # to interpolate onto the right contact state nor into the left void state.
+        # the fall-through is then to interpolate onto the metric, which will interpolate onto the boundary.
+        if ( (x >= self.extent_grid * self.d_xy and snap_to_metric != -1) or
+             (x <= -self.extent_grid * self.d_xy and snap_to_metric != 1) ):
             return [(1.0, State(DirectionStateFactor(d), VoidStateFactor()) )]
-        elif np.abs(x) <= self.object_half_width_grid * self.d_xy:
+        elif ( (x <= self.object_half_width_grid * self.d_xy and x >= 0  and snap_to_metric != 1) or
+               (x >= -self.object_half_width_grid * self.d_xy and x <= 0 and snap_to_metric != -1) ):
             #raise NotImplementedError() #This might actually just need to be an error
             return [(1.0, State(DirectionStateFactor(d), ContactStateFactor()) )]
         else:
