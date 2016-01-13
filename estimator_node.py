@@ -122,7 +122,7 @@ class AggregateObservation(object):
 
 ao = AggregateObservation()
 
-belief_publisher = rospy.Publisher("/estimator_belief", std_msg.String, queue_size=10)
+belief_publisher = rospy.Publisher("/estimator_belief", std_msg.String, queue_size=10, latch=True)
 
 
 state_space = estimator_state_space.StateSpace()
@@ -132,16 +132,21 @@ obs_act_update = estimator_object.obs_act_update
 GuardedVelocity = estimator_transition_model.guarded_velocity_factory(state_space, Belief)
 
 
+class BeliefHolderSingleton(object):
+    current_belief = Belief()
+    @staticmethod
+    def reset():
+        # susceptible to race conditions
+        BeliefHolderSingleton.current_belief.clear()
+        for state in state_space.states:
+            BeliefHolderSingleton.current_belief[state] = 1.0
 
-current_belief = Belief()
+        BeliefHolderSingleton.current_belief.normalize()
 
-for state in state_space.states:
-    current_belief[state] = 1.0
 
-current_belief.normalize()
+belief_publisher.publish(std_msg.String(BeliefHolderSingleton.current_belief.to_json_string())) #initial belief
 
 def cb(displacement_obs, duration, force_obs, action_twist):
-    global current_belief
     action_v = action_twist[0]
     force_x = force_obs[0]
     displacement_x = displacement_obs[0]
@@ -149,8 +154,8 @@ def cb(displacement_obs, duration, force_obs, action_twist):
 
     time_before_update = time.time()
 
-    current_belief = obs_act_update(
-        current_belief, 
+    BeliefHolderSingleton.current_belief = obs_act_update(
+        BeliefHolderSingleton.current_belief,
         displacement_x, 
         force_x, 
         GuardedVelocity(action_v),
@@ -158,10 +163,8 @@ def cb(displacement_obs, duration, force_obs, action_twist):
 
     time_after_update = time.time()
 
-    print("Belief Update Time: %s ms"%(1000*(time_after_update-time_before_update)))
+    #rospy.loginfo(("Belief Update Time: %s ms"%(1000*(time_after_update-time_before_update)))
+    belief_publisher.publish(std_msg.String(BeliefHolderSingleton.current_belief.to_json_string()))
 
-    belief_publisher.publish(std_msg.String(current_belief.to_json_string()))
-
-
-
+BeliefHolderSingleton.reset()
 ao.update_cb = cb

@@ -5,7 +5,7 @@ from estimator_state_space import (DirectionStateFactor, MetricStateFactor,
 
 
 def exp_norm_piecewise(exp_param, norm_param):
-    # return a normalized pdf that is continuous at switchpoint
+    # return a normalized log pdf that is continuous at switchpoint
     # it looks like an exponential for positive values
     # it looks like a normal for negative values
     
@@ -14,7 +14,7 @@ def exp_norm_piecewise(exp_param, norm_param):
         # the first piece has area s. the second piece has area sqrt(pi)/(2 * sqrt(1/s))
         # where s is, respectively, exp_param and norm_param
         eta = exp_param + np.sqrt(np.pi)/(2*np.sqrt(1.0/norm_param))
-        return np.where(x>=0, np.exp(-x/exp_param), np.exp(-(x**2)/norm_param)) / eta
+        return np.where(x>=0, (-x/exp_param), (-(x**2)/norm_param)) - np.log(eta)
     
     return f
 
@@ -24,7 +24,7 @@ def displacement_observation_distribution_factory(state_space):
         # displacement is expressed in the object coordinate frame at 
         # the time of from_state
         #in the 1d case, the object frame doesn't rotate, this is not important?
-        
+        # return log densities
         if from_state.direction != to_state.direction:
             # not too important because the probability of this transition is zero. right?
             # at least in the 1D case.
@@ -41,7 +41,7 @@ def displacement_observation_distribution_factory(state_space):
             # if delta_x is positive, that means the jig moved leftward = the object moved rightward
             # this is the nominal observation.
             sd = 0.02 #2 cm std. dev
-            return lambda (x): np.exp(-0.5*((x-delta_x)/(sd))**2) / (sd * np.sqrt(2*np.pi))
+            return lambda (x): (-0.5*((x-delta_x)/(sd))**2) / (sd * np.sqrt(2*np.pi))
 
         metric_void_trans = None
         if (not_void(from_state.displacement) and 
@@ -66,7 +66,7 @@ def displacement_observation_distribution_factory(state_space):
             isinstance(from_state.displacement, VoidStateFactor)):
             # doesn't happen in 1D case for now.
             sd = 10.00 #10 m std. dev
-            return lambda (x): np.exp(-0.5*((x-0.0)/(sd))**2) / (sd * np.sqrt(2*np.pi))
+            return lambda (x): (-0.5*((x-0.0)/(sd))**2) / (sd * np.sqrt(2*np.pi))
         
         raise ValueError("Need to handle: %s %s"%(from_state, to_state))
 
@@ -78,13 +78,13 @@ def force_observation_distribution_factory(state_space):
         # force is expressed in the object coordinate frame at 
         # the time of to_state
         # in the 1d case, the object frame doesn't rotate, this is not important?
-        
+        # return log densities
         if not isinstance(to_state.displacement, ContactStateFactor):
             # not in contact. 
             # assume there's no friction, so nominally there is zero force
             # with friction, would look at the action.
             sd = 0.5 #0.5 N std. dev
-            return lambda (x): np.exp(-0.5*((x-0.0)/(sd))**2) / (sd * np.sqrt(2*np.pi))
+            return lambda (x): (-0.5*((x-0.0)/(sd))**2) / (sd * np.sqrt(2*np.pi))
         
         else:
             # in a contact state. depending on how we got here, we expect to feel different amounts of force.

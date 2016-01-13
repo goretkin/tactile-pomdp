@@ -20,17 +20,17 @@ class Estimator(object):
         one_step_belief = action.propogate_state(state, dt=duration) # this isn't the prior belief, btw. I don't know a good name.
         one_step_belief.sparsify()
         for next_state in one_step_belief.nonzero_states(): #one_step_belief.nonzero_states():            
-            p_o = 1
+            p_o = 0
             if displacement_observation is not None:
                 p_d = self.displacement_observation_distribution(state, next_state)(displacement_observation)
-                p_o *= p_d
+                p_o += p_d
 
             if force_observation is not None:
                 p_f = self.force_observation_distribution(next_state, action.velocity)(force_observation)
-                p_o *= p_f
+                p_o += p_f
             
             # if p_o were one, then this would be just a transition update
-            b[next_state] = p_o * one_step_belief[next_state]
+            b.p[next_state] = p_o + one_step_belief.p[next_state]
         
         # you lost days thinking you should normalize over here. ugh.
         #b.normalize() 
@@ -46,8 +46,8 @@ class Estimator(object):
         Belief = self.belief_class
 
         # marginalize out state
-        r = Belief.blend(
-                [(old_belief[state], 
+        r = Belief.logblend(
+                [(old_belief.p[state],
                   self.distribution_over_next_state_given_sao(
                         state, action, 
                         force_observation, 

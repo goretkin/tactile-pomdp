@@ -1,8 +1,13 @@
 import numpy as np
 from collections import defaultdict
+import heapq
+
 import json
 
 from estimator_state_space import State
+
+from quietlog import quiet_log, silent_division_by_zero
+from scipy.misc import logsumexp
 
 def belief_factory(state_space):
     # I want to be able to construct Belief objects without making reference to the state space all the time
@@ -19,14 +24,14 @@ def belief_factory(state_space):
                     self[delta] = 1.0
                 else:
                     raise ValueError(delta)
-        
+
         def clear(self):
-            self.p = defaultdict(lambda: 0) # keys are states
+            self.p = defaultdict(lambda: -np.inf) # keys are states
 
         def prob(self, state):
             if state not in self.state_space.states:
                 raise ValueError(state)
-            return self.p[state]
+            return np.exp(self.p[state])
 
         def __getitem__(self, state):
             return self.prob(state)
@@ -36,17 +41,16 @@ def belief_factory(state_space):
                 raise ValueError(value)
             if state not in self.state_space.states:
                 raise ValueError(state)
-            self.p[state] = value
+            self.p[state] = quiet_log(value)
         
         def nonzero_states(self):
-            # structurally nonzero
+            # structurally nonzero probabilities
             return self.p.keys()
 
         @staticmethod
         def blend(affine_combo, check_normalized_beliefs=False, safe_nonnegative_affine=False):
-            coeffs = np.array([a for (a, b) in affine_combo])
-            
             if safe_nonnegative_affine:
+                coeffs = np.array([a for (a, b) in affine_combo])
                 #investigating a performance issue.
                 if not np.isclose(np.sum(coeffs), 1.0) or not np.all(coeffs>=0.0):
                     raise ValueError("invalid combination: %s"%(coeffs))
@@ -59,7 +63,40 @@ def belief_factory(state_space):
                     raise AssertionError("Belief is not normalized")
 
                 for s in b.nonzero_states():
-                    blended.p[s] += a*b.p[s]
+                    #blended[s] += a*b[s]
+                    blended.p[s] = np.logaddexp(blended.p[s], b.p[s]+np.log(a))
+
+            if check_normalized_beliefs and (not np.isclose(blended.sum(), 1.0)):
+                raise AssertionError("sum should have come out to 1.0: %s"%(blended.sum()))
+            
+            return blended
+
+        @staticmethod
+        def logblend(affine_combo, check_normalized_beliefs=False, safe_nonnegative_affine=False):
+            # how to avoid copying but maintain performance
+            if safe_nonnegative_affine:
+                coeffs = np.array([np.exp(a) for (a, b) in affine_combo])
+                #investigating a performance issue.
+                if not np.isclose(np.sum(coeffs), 1.0) or not np.all(coeffs>=0.0):
+                    raise ValueError("invalid combination: %s"%(coeffs))
+            
+            #assume each belief is normalized
+            blended = Belief()
+
+            for (a,b) in affine_combo:
+                if check_normalized_beliefs and (not np.isclose(b.sum(), 1.0)):
+                    raise AssertionError("Belief is not normalized")
+
+                for s in b.nonzero_states():
+                    # in non-log-probability space, this is all we're computing: 
+                    # blended[s] += a*b[s]
+                    # see: https://en.wikipedia.org/wiki/Log_probability
+                    # blended.p[s] += np.log1p(np.exp((a) + b.p[s] - blended.p[s]))
+                    # it is critical to use a proper implementation of logaddexp
+                    # and to not try to use the += operator
+                    # because the default value of the dictionary is -inf
+                    # and you can't += anything to that reasonably.
+                    blended.p[s] = np.logaddexp(blended.p[s], b.p[s]+(a))
 
             if check_normalized_beliefs and (not np.isclose(blended.sum(), 1.0)):
                 raise AssertionError("sum should have come out to 1.0: %s"%(blended.sum()))
@@ -68,27 +105,31 @@ def belief_factory(state_space):
                 
         def something(self):
             for s in self.state_space.manifold_0d:
-                self.p[s] = np.random.rand()
-                self.p[s] = np.random.rand()
+                self[s] = np.random.rand()
+                self[s] = np.random.rand()
             
             for s in self.state_space.manifold_1d:
-                self.p[s] = 0.1 * np.random.rand()
+                self[s] = 0.1 * np.random.rand()
         
             self.normalize()
 
         def sum(self):
-            return sum(self.p.values())
+            return np.exp(self.logsum())
+
+        def logsum(self):
+            return logsumexp(self.p.values())
            
         def normalize(self):
-            eta = 1.0/(self.sum())
+            eta = self.logsum()
 
-            if np.isnan(eta):
-                raise AssertionError("nan")
+            if np.isinf(eta):
+                raise ZeroDivisionError()
             for s in self.nonzero_states():
-                self.p[s] *= eta
+                self.p[s] -= eta
 
-        def embed_metric_grid(self):
+        def embed_metric_grid(self, logprob=False):
             # return something you can then plot and it has the right shape.
+            # return probabilities by default, otherwise log-space probabilities
             x = []
             y = []
             
@@ -97,7 +138,7 @@ def belief_factory(state_space):
                 if s in self.state_space.manifold_1d:
                     translation, orientation = self.state_space.to_continuous(s)
                     x.append(translation)
-                    y.append(self[s])
+                    y.append(self.p[s] if logprob else self[s])
             
             x = np.array(x)
             y = np.array(y)
@@ -108,9 +149,17 @@ def belief_factory(state_space):
             return x, y
             
             
-        def plot(self, ax, frame="object", all_kwargs={}, p_metric_kwargs=dict(color='grey',linestyle="")):
+        def plot(self, ax, frame="object", all_kwargs={}, p_metric_kwargs=dict(color='grey',linestyle=""),
+            logprob=False):
             belief = self
-        
+            beliefplot =  belief.p if logprob else belief
+
+            logmin = np.min(belief.p.values()) #this shouldn't be nan, but it may be -np.inf
+            if logmin == -np.inf:
+                logmin = -10000.0 # arbitrary low number.
+
+            h0 = logmin if logprob else 0.0 #horizontal origin
+
             def merge_two_dicts(x, y):
                 '''Given two dicts, merge them into a new dict as a shallow copy.
                 y overrides x'''
@@ -125,7 +174,7 @@ def belief_factory(state_space):
                                  stemline_kwargs=dict(linewidth=4.0, alpha=0.5, color=p_metric_kwargs['color'])):
                 a = [] #store artists
                 a.extend(
-                    ax.plot([x, x], [0.0, y], **merge_two_dicts(all_kwargs, stemline_kwargs))) # should use only formal parameters (not all_kwargs) to this function
+                    ax.plot([x, x], [h0, y], **merge_two_dicts(all_kwargs, stemline_kwargs))) # should use only formal parameters (not all_kwargs) to this function
                 
            
                 a.extend(
@@ -137,13 +186,13 @@ def belief_factory(state_space):
         
                 artists.extend(
                     plot_single_stem(ax, x, 
-                                     belief.p[s]) )
+                                     beliefplot[s]) )
                 artists.extend(
                     plot_single_stem(ax, x, 
-                                     belief.p[s]) )
+                                     beliefplot[s]) )
                     
      
-            x, p = self.embed_metric_grid()
+            x, p = self.embed_metric_grid(logprob=logprob)
                 
             artists.extend(
                 ax.plot(x, p, marker=".", 
@@ -174,7 +223,7 @@ def belief_factory(state_space):
             # relevant states
             states = set.intersection(set(self.nonzero_states()), self.state_space.manifold_1d)
                 
-            s = sum([self.p[s] for s in states])
+            s = sum([self[s] for s in states])
         
             if s == 0:
                 raise ValueError("Metric manifold has zero probability")
@@ -183,7 +232,7 @@ def belief_factory(state_space):
             
             m = 0
             for state in states:
-                m += self.p[state]/s * self.state_space.discretization_free[state.displacement.x]
+                m += self[state]/s * self.state_space.discretization_free[state.displacement.x]
             
             return m
         
@@ -192,12 +241,12 @@ def belief_factory(state_space):
 
             # relevant states
             states = set.intersection(set(self.nonzero_states()), self.state_space.manifold_1d)
-            s = sum([self.p[s] for s in states])
+            s = sum([self[s] for s in states])
             
             v = 0
                 
             for state in states:
-                v += self.p[state]/s * (self.state_space.discretization_free[state.displacement.x]-m)**2
+                v += self[state]/s * (self.state_space.discretization_free[state.displacement.x]-m)**2
             
             return v
         
@@ -205,18 +254,28 @@ def belief_factory(state_space):
             # in-place make non-structural zeros be structural zeros.
             # consider normalizing if threshold > 0
             for s in self.nonzero_states():
-                if self.p[s] <= threshold:
+                if self.p[s] <= quiet_log(threshold):
                     del self.p[s]
+
+        def max_p(self):
+            return self.max()[1]
+
+        def max(self):
+            return max(self.p.iteritems(), key=lambda x: x[1])
+
+        def max_n(self, n=1):
+            return heapq.nlargest(n, self.p.iteritems(), key=lambda x: x[1])
 
         @staticmethod 
         def diff(b1, b2):
             # doesn't actually return a Belief...
             b = Belief()
             for s in set.union(set(b1.nonzero_states()), set(b2.nonzero_states())):
-                b.p[s] = b1.p[s] - b2.p[s]
+                b[s] = b1[s] - b2[s]
             return b
 
         def to_json_string(self):
+            # store log probabilities
             d = {self.state_space.state_to_id[s]:self.p[s] for s in self.p.keys()}
             return json.dumps(d)
 
@@ -225,7 +284,21 @@ def belief_factory(state_space):
             d = json.loads(s)
 
             for k in d.keys():
-                self[self.state_space.id_to_state[int(k)]] = d[k]
+                self.p[self.state_space.id_to_state[int(k)]] = d[k]
+
+
+        def __repr__(self):
+            _str = "Belief\n"
+            for s in self.state_space.ordered_states:
+                if self.p.has_key(s):
+                    _str += s.__repr__() + ": " + str(self.p[s]) + "\n"
+            return _str
+
+        @staticmethod
+        def from_state_interpolation(affine_combo):
+            #this is what the StateSpace interpolator spits out
+            return Belief.blend([(a,Belief(delta=b)) for (a,b) in affine_combo])
+
 
 
     return Belief
