@@ -9,11 +9,12 @@ def guarded_velocity_factory(state_space, belief_class):
     Belief = belief_class
 
     class GuardedVelocity(object):
-        def __init__(self, velocity):
+        def __init__(self, velocity, stuck_probability=0.1, void_probability=0.9):
             self.velocity = velocity
             #self.time_left = 1.0
             #self.finished = False
-            self.stuck_probability = 0.1
+            self.stuck_probability = stuck_probability
+            self.void_probability = void_probability
 
         def propogate_belief(self, belief, dt=0.1):
             to_blend = []
@@ -82,7 +83,7 @@ def guarded_velocity_factory(state_space, belief_class):
                     b = Belief(delta=state)
                 else:
                     #moving toward metric. with probability alpha, stay in the void
-                    alpha = 0.9
+                    alpha = self.void_probability
                     
                     void_fringe = (state_space.extent) * void_direction
                     xprime = void_fringe - dt*self.velocity
