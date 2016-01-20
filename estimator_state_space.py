@@ -85,6 +85,9 @@ class StateSpace(object):
             [np.arange(-self.extent_grid, -self.object_half_width_grid+1),
             np.arange(self.object_half_width_grid, self.extent_grid+1)]) * d_xy
         
+        # index of last metric state on the left. +1 gives you the next one on the right. ewww
+        self.last_metric_on_left = len(np.arange(-self.extent_grid, -self.object_half_width_grid+1))-1
+
         # negative positions have a +1 direction, and vice versa
         self.n_directions = 2
         
@@ -116,15 +119,20 @@ class StateSpace(object):
             
     def to_continuous(self, state, frame="object"):
         # should perhaps more aptly be called "embed"
+
+        if state not in self.states:
+            raise ValueError("Not in this space")
+
         if frame != "object":
             raise NotImplementedError()
-                
+
+        # always returns something on the state grid, except for Contact states
         if isinstance(state.displacement, MetricStateFactor):
             return (self.discretization_free[state.displacement.x], state.direction.d)
         elif isinstance(state.displacement, VoidStateFactor):
             return (self.d_xy*self.extent_grid*-state.direction.d, state.direction.d)
         elif isinstance(state.displacement, ContactStateFactor):
-            return (self.d_xy*self.object_half_width_grid*-state.direction.d, state.direction.d)
+            return (self.object_half_width*-state.direction.d, state.direction.d)
 
     def nearest(self, xd, frame="object"):
         items = self.interpolate(xd, frame)
@@ -143,13 +151,22 @@ class StateSpace(object):
         # with the direction the jig is moving in. e.g. if you're moving toward the right, you're not allowed
         # to interpolate onto the right contact state nor into the left void state.
         # the fall-through is then to interpolate onto the metric, which will interpolate onto the boundary.
-        if ( (x >= self.extent_grid * self.d_xy and snap_to_metric != -1) or
-             (x <= -self.extent_grid * self.d_xy and snap_to_metric != 1) ):
+
+        # use strict inequality here because we wish the exact endpoints of the metric space to interpolate exactly
+        if ( (x > self.extent_grid * self.d_xy and snap_to_metric != -1) or
+             (x < -self.extent_grid * self.d_xy and snap_to_metric != 1) ):
             return [(1.0, State(DirectionStateFactor(d), VoidStateFactor()) )]
-        elif ( (x <= self.object_half_width_grid * self.d_xy and x >= 0  and snap_to_metric != 1) or
-               (x >= -self.object_half_width_grid * self.d_xy and x <= 0 and snap_to_metric != -1) ):
+        elif ( (x < self.object_half_width and x > 0) or
+               (x > -self.object_half_width and x < 0)):
             #raise NotImplementedError() #This might actually just need to be an error
             return [(1.0, State(DirectionStateFactor(d), ContactStateFactor()) )]
+        elif ( (x < self.object_half_width_grid * self.d_xy and x >= self.object_half_width  and snap_to_metric != 1) or
+               (x > -self.object_half_width_grid * self.d_xy and x <= -self.object_half_width and snap_to_metric != -1) ):
+            # between the metric and contact states.
+            a = abs(x) - self.object_half_width
+            b = self.object_half_width_grid * self.d_xy - abs(x)
+            return [ (a/(a+b), State(DirectionStateFactor(d), MetricStateFactor(self.last_metric_on_left + (0 if d==1 else 1)))),
+                     (b/(a+b), State(DirectionStateFactor(d), ContactStateFactor())) ]
         else:
             if np.sign(x)*d > 0:
                 # the jig is up and facing into us. or down and facing into us.
@@ -177,6 +194,12 @@ class StateSpace(object):
                     return [ (1.0, a_state) ]
                 else:
                     return [ (1.0, b_state) ]
+
+
+    @staticmethod
+    def max_interpolated(distribution):
+        val, state = max(distribution, key=lambda x: x[0])
+        return state
 
 
 hashmap = {}
