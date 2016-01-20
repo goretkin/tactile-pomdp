@@ -9,17 +9,20 @@ def exp_norm_piecewise(exp_param, norm_param):
     # it looks like an exponential for positive values
     # it looks like a normal for negative values
     
+    # norm_param has the same units as exp_param
     def f(x):
         # return np.where(x>=0, np.exp(-x/exp_param), np.exp(-(x**2)/norm_param))
-        # the first piece has area s. the second piece has area sqrt(pi)/(2 * sqrt(1/s))
+        # the first piece has area s. the second piece has area sqrt(pi)*s/2)
         # where s is, respectively, exp_param and norm_param
-        eta = exp_param + np.sqrt(np.pi)/(2*np.sqrt(1.0/norm_param))
-        return np.where(x>=0, (-x/exp_param), (-(x**2)/norm_param)) - np.log(eta)
+        eta = exp_param + norm_param*np.sqrt(2*np.pi)/2
+        return np.where(x>=0, (-x/exp_param), (-0.5*(x/norm_param)**2)) - np.log(eta)
     
     return f
 
 
-def displacement_observation_distribution_factory(state_space):
+def displacement_observation_distribution_factory(state_space,
+    metric_metric_resolution=0.02,
+    metric_void_resolution=0.02): #2 cm std. dev
     def displacement_observation_distribution(from_state, to_state):
         # displacement is expressed in the object coordinate frame at 
         # the time of from_state
@@ -28,7 +31,7 @@ def displacement_observation_distribution_factory(state_space):
         if from_state.direction != to_state.direction:
             # not too important because the probability of this transition is zero. right?
             # at least in the 1D case.
-            return lambda (x): np.zeros_like(x)
+            return lambda (x): np.ones_like(x) * -np.inf
             
         from_xd = state_space.to_continuous(from_state) 
         to_xd =  state_space.to_continuous(to_state)
@@ -40,7 +43,7 @@ def displacement_observation_distribution_factory(state_space):
         if not_void(from_state.displacement) and not_void(to_state.displacement):
             # if delta_x is positive, that means the jig moved leftward = the object moved rightward
             # this is the nominal observation.
-            sd = 0.02 #2 cm std. dev
+            sd = metric_metric_resolution # std. dev
             return lambda (x): (-0.5*((x-delta_x)/(sd))**2) / (sd * np.sqrt(2*np.pi))
 
         metric_void_trans = None
@@ -58,13 +61,13 @@ def displacement_observation_distribution_factory(state_space):
             # the object moved, in the from_state.direction.d, at least
             # nominally abs(delta_x). It could be a little less or a lot more.
             def f(x):
-                g = exp_norm_piecewise(1.0,0.02)
+                g = exp_norm_piecewise(1.0, metric_void_resolution)
                 return g(metric_void_trans*(x-delta_x)/d)
             return f
         
         if (isinstance(to_state.displacement, VoidStateFactor) and 
             isinstance(from_state.displacement, VoidStateFactor)):
-            # doesn't happen in 1D case for now.
+            # doesn't happen in 1D case for now. <-- why did I write this
             sd = 10.00 #10 m std. dev
             return lambda (x): (-0.5*((x-0.0)/(sd))**2) / (sd * np.sqrt(2*np.pi))
         
