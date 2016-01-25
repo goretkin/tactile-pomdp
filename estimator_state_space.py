@@ -79,7 +79,7 @@ class StateSpace(object):
         self.object_half_width = object_half_width
         
         self.extent_grid = int(np.ceil(self.extent/self.d_xy))
-        self.object_half_width_grid = int(np.ceil(object_half_width/d_xy)) # change to floor if you want some jig points slightly penetrating the object
+        self.object_half_width_grid = int(np.floor(object_half_width/d_xy)) #floor ensures some jig points slightly penetrating the object, or on the object
         
         self.discretization_free = np.concatenate(
             [np.arange(-self.extent_grid, -self.object_half_width_grid+1),
