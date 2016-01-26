@@ -6,19 +6,19 @@ from collections import defaultdict
 
 from domain import PlanarPolygonObjectInCorner, plot_obj, plot_jig_relative, jig_corner_pose_relative, Discretization
 
-half_height = 2
-shape_vertex_list = [ [1,half_height], [1,-half_height], [-1,-half_height], [-1,half_height] ]
-po = PlanarPolygonObjectInCorner(vertex_list=shape_vertex_list)
+#half_height = 2
+#shape_vertex_list = [ [1,half_height], [1,-half_height], [-1,-half_height], [-1,half_height] ]
+po = PlanarPolygonObjectInCorner()
 
 
 discretization = Discretization(po)
-discretization.discretize()
-#discretization.discretize_regular_grid_object_frame()
+discretization.do_it_all()
 
-free_states = discretization.free_states
-bottom_edge_states = discretization.bottom_edge_states
-left_edge_states = discretization.left_edge_states
-corner_states = discretization.corner_states
+
+free_states = np.array(discretization.free_states)
+bottom_edge_states = np.array(discretization.bottom_edge_states)
+left_edge_states = np.array(discretization.left_edge_states)
+corner_states = np.array(discretization.corner_states)
 
 
 class Browse():
@@ -218,12 +218,12 @@ for ax, frame in zip( [ax_object, ax_jig], ["object", "jig"]):
     if frame == "jig":
         ax.axhline(0, )
         ax.axvline(0, )
-        ax.set_xlim(-1,7)
-        ax.set_ylim(-1,7)
+        ax.set_xlim(-0.05,0.4)
+        ax.set_ylim(-0.05,0.4)
 
     elif frame == "object":
-        ax.set_xlim(-5, 5)
-        ax.set_ylim(-5, 5)
+        ax.set_xlim(-0.4, 0.4)
+        ax.set_ylim(-0.4, 0.4)
         po.set_pose((0, 0, 0))
         plot_obj(po, ax, {'alpha':1.0,})
 

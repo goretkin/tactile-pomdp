@@ -4,6 +4,7 @@ from sets import Set
 import itertools
 from nbprogressbar import ProgressBar
 
+import json
 """
 we left-multiply points, so the rotation matrix might be transpose of what you expect
 """
@@ -13,17 +14,19 @@ def rot_SO2(theta):
     return np.array(rot)
 
 
+duplo_unit = 32.0 * 1e-3 # length of a 2-by-2 duplo block, in meters
+
 class Discretization():
     def __init__(self, domain):
         self.domain = domain
 
-        self.delta_xy = .2
+        self.delta_xy = .01
         self.delta_r = np.deg2rad(360) / 40
 
-        self.xmin = 0
-        self.xmax = 5
+        self.xmin = 0.0
+        self.xmax = duplo_unit * 8
         self.ymin = 0
-        self.ymax = 5
+        self.ymax = duplo_unit * 8
         self.rmin = np.deg2rad(-180)
         self.rmax = np.deg2rad(180)
 
@@ -35,8 +38,70 @@ class Discretization():
         # to do nearest neighbors (at least for x,y)
         self.regular_grid_in_frame = None
 
-    # TODO: generate contact manifolds
+        self.free_states = None
+        self.bottom_edge_states = None
+        self.left_edge_states = None
+        self.corner_states = None
+
+        self.state_is = "pose_of_object_in_jig"
+
+        self.insist_on_rectangular_region_in_jig_frame = False # Complete the covered area so that the void region is easy.
+
+        
+        try:
+            with open("discretization_cached.json") as f:
+                d = json.load(f)
+
+                for k in d.keys():
+                    self.__dict__[k] = d[k]
+
+                    if k in d["__converted_np_arrays"]:
+                        self.__dict__[k] = np.array(self.__dict__[k])
+
+        except IOError as e:
+            self.cached = False
+
+
+    def json_serialize(self):
+        d = dict(self.__dict__)
+        del d["domain"] # don't try to serialize this
+        d["cached"] = True
+
+        np_array_items = []
+        for k in d.keys():
+            if isinstance(d[k], np.ndarray):
+                d[k] = d[k].tolist()
+                np_array_items.append(k)
+
+        d["__converted_np_arrays"] = np_array_items
+
+        with open("discretization_cached.json", "w" ) as f:
+            json.dump(d, f)
+
+
+    def do_it_all(self):
+        if self.cached:
+            return
+        else:
+            self.discretize_regular_grid_object_frame()
+            self.discretize_contact_manifolds()
+            self.json_serialize()
+
+    def make_states_be_pose_of_jig_in_object_frame(self):
+        if not self.state_is == "pose_of_object_in_jig":
+            raise AssertionError()
+
+        self.state_is = "pose_of_jig_in_object"
+        self.free_states = np.apply_along_axis(jig_corner_pose_relative, axis=1, arr=self.free_states)
+        self.bottom_edge_states = np.apply_along_axis(jig_corner_pose_relative, axis=1, arr=self.bottom_edge_states)
+        self.left_edge_states = np.apply_along_axis(jig_corner_pose_relative, axis=1, arr=self.left_edge_states)
+        self.corner_states = np.apply_along_axis(jig_corner_pose_relative, axis=1, arr=self.corner_states)
+
+
     def discretize_regular_grid_object_frame(self):
+        if not self.state_is == "pose_of_object_in_jig":
+            raise AssertionError()
+
         self.regular_grid_in_frame = "object"
 
         #find box bounds for the regular grid
@@ -68,24 +133,28 @@ class Discretization():
         self.ys_object = np.arange(self.ymin_object, self.ymax_object, self.delta_xy)
         self.rs_object = self.rs
 
+        self.radius_object_frame = np.max(np.abs([self.xmax_object, self.ymax_object, self.xmin_object, self.ymin_object]))
+
         free_states = []
         progressbar = ProgressBar(len(self.xs_object) * len(self.ys_object) * len(self.rs_object))
         for i, (x, y, r) in enumerate(itertools.product(self.xs_object, self.ys_object, self.rs_object)):
             self.domain.set_pose_of_jig_relative_to_object((x, y, r))
-
-            #arbitrary amount of "not too much penetration"
-            if self.domain.penetration() < self.delta_xy/2.0:
-                free_states.append(self.domain.get_pose())
+            
+            x_try, y_try, r_try = self.domain.get_pose()
+            if ((self.insist_on_rectangular_region_in_jig_frame and 
+                self.xmin <= x_try <= self.xmax and self.ymin <= y_try <= self.ymax) or
+                (not self.insist_on_rectangular_region_in_jig_frame and (x**2 + y**2 <= self.radius_object_frame**2))):
+                #arbitrary amount of "not too much penetration"
+                if self.domain.penetration() < self.delta_xy:
+                    free_states.append(self.domain.get_pose())
             progressbar.animate(i+1)
-
-        self.bottom_edge_states = [] # np.array(bottom_edge_states)
-        self.left_edge_states = [] # np.array(left_edge_states)
-        self.corner_states = [] # np.array(corner_states)
+        
         self.free_states = np.array(free_states)
 
 
-    def discretize(self):
-        self.regular_grid_in_frame = "jig"
+    def discretize_contact_manifolds(self):
+        if not self.state_is == "pose_of_object_in_jig":
+            raise AssertionError()
 
         #discretize contact manifolds
         bottom_edge_states = []
@@ -123,6 +192,19 @@ class Discretization():
             progressbar.animate(ri+1)
         print("corner done")
 
+        self.bottom_edge_states = np.array(bottom_edge_states)
+        self.left_edge_states = np.array(left_edge_states)
+        self.corner_states = np.array(corner_states)
+
+
+    def discretize(self):
+        if not self.state_is == "pose_of_object_in_jig":
+            raise AssertionError()
+
+        self.regular_grid_in_frame = "jig"
+
+        self.discretize_contact_manifolds()
+
         free_states = []
         progressbar = ProgressBar(len(self.xs) * len(self.ys) * len(self.rs))
         for i, (x, y, r) in enumerate(itertools.product(self.xs, self.ys, self.rs)):
@@ -134,9 +216,6 @@ class Discretization():
                 free_states.append(self.domain.get_pose())
             progressbar.animate(i+1)
 
-        self.bottom_edge_states = np.array(bottom_edge_states)
-        self.left_edge_states = np.array(left_edge_states)
-        self.corner_states = np.array(corner_states)
         self.free_states = np.array(free_states)
 
 
@@ -145,9 +224,12 @@ class Discretization():
 class PlanarPolygonObjectInCorner():
     def __init__(self,vertex_list=None):
         
+        half_width = duplo_unit * 2 / 2
+        half_height = duplo_unit * 3 / 2
+
         if vertex_list is None:
             #counter-clockwise
-            vertex_list = [ [1,1], [1,-1], [-1,-1], [-1,1] ]
+            vertex_list = [ [half_width, half_height], [half_width,-half_height], [-half_width,-half_height], [-half_width,half_height] ]
       
         self.num_vertices = len(vertex_list)
         #self.edge_list = [(i,i+i) for i in range(self.num_vertices-1)] + [(self.num_vertices-1,0)]
