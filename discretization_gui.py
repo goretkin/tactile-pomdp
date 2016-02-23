@@ -32,7 +32,7 @@ class Browse():
 
         # in whichever frame the states are printed in, chunk them
         # into neighborhoods of discretization.delta_xy size
-        # this chunking is exact when self.frame == self.regular_grid_in_frame
+        # this chunking is exact when self.frame == self.free_regular_grid_in_frame
         # the values of this dictionary are states: the pose of the object expressed in the jig frame.
         self.free_states_plot_xy_snap_dict = defaultdict(list)
 
@@ -154,7 +154,7 @@ def make_oriented_segments(states, r):
     oriented_segments[:,1,:] += oriented_segments[:,0,:]
     return oriented_segments
 
-if discretization.regular_grid_in_frame == "jig":
+if discretization.free_regular_grid_in_frame == "jig":
     # don't plot the quivers in xy positions where every direction is possible.
     # (this only can happen if the discretization regular in the jig frame)
     free_states_xy_dict = defaultdict(list)
@@ -199,9 +199,9 @@ for ax, frame in zip( [ax_object, ax_jig], ["object", "jig"]):
         # don't plot the quivers in xy positions where every direction is possible.
         oriented_segments = make_oriented_segments(free_states_not_free_rotation, discretization.delta_xy * 0.5 * .90)
 
-        quiveralpha = 1.0 if discretization.regular_grid_in_frame == "jig" else 0.2
+        quiveralpha = 1.0 if discretization.free_regular_grid_in_frame == "jig" else 0.2
         ax.add_collection(matplotlib.collections.LineCollection(oriented_segments, alpha=quiveralpha))
-        if discretization.regular_grid_in_frame == "jig":
+        if discretization.free_regular_grid_in_frame == "jig":
             ax.plot(free_states[:,0], free_states[:,1], '.', alpha=0.2)
         else:
             # too poluted

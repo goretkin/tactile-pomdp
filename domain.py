@@ -36,17 +36,32 @@ class Discretization():
 
         # if this is a regular grid in some frame, then it's a lot easier
         # to do nearest neighbors (at least for x,y)
-        self.regular_grid_in_frame = None
+        self.free_regular_grid_in_frame = None
+        self.bottom_regular_grid_in_frame = None
+        self.left_regular_grid_in_frame = None
+        self.corner_regular_grid_in_frame = None
 
+        # elements of the following are x,y,t coordinates of
+        # the $self.state_is (e.g. pose of the object expressed in the jig frame)
         self.free_states = None
         self.bottom_edge_states = None
         self.left_edge_states = None
         self.corner_states = None
 
-        self.state_is = "pose_of_object_in_jig"
+        # elements of the following are integer grid coordintes into
+        # xs, ys, rs or xs_object, ys_object, rs_object, depending on each manifold's
+        # corresponding value of free_regular_grid_in_frame
+        # would store these as nmaed tuples, however can't json serialize.
+        self.free_states_grid = []
+        self.bottom_states_grid = []
+        self.left_states_grid = []
+        self.corner_states_grid = []
+
+        # each element of free_states corresponds in order to free_states_grid
+
+        self.state_is = "pose_of_object_in_jig" # what coordinates the geometric state is expressed in
 
         self.insist_on_rectangular_region_in_jig_frame = False # Complete the covered area so that the void region is easy.
-
         
         try:
             with open("discretization_cached.json") as f:
@@ -102,19 +117,24 @@ class Discretization():
         if not self.state_is == "pose_of_object_in_jig":
             raise AssertionError()
 
-        self.regular_grid_in_frame = "object"
+        self.free_regular_grid_in_frame = "object"
 
-        #find box bounds for the regular grid
-        #that covers at least as much area as would the original grid in the jig frame
-        grid = itertools.product(self.xs, self.ys, self.rs)
+        # find box bounds for the regular grid in object frame
+        # that covers the area that the contact manifolds will cover.
+        # assume the object is held at the center.
+        # that's what lets us assign a value a self.radius_obhect_frame
+        # and just choose one jig_edge.
+        # also self.x_max = self.y_max....
 
-        constellation = map(lambda x: jig_corner_pose_relative(x), grid)
-        constellation = np.array(constellation)
+        pose = self.domain.get_pose_against_edge(jig_edge_i=0, angle=0.0, displacement_along_edge=self.xmax)
+        x, y, _ = jig_corner_pose_relative(pose)
+        self.radius_object_frame = np.sqrt(x**2 + y**2)
 
-        self.xmin_object = np.min(constellation[:,0])
-        self.xmax_object = np.max(constellation[:,0])
-        self.ymin_object = np.min(constellation[:,1])
-        self.ymax_object = np.max(constellation[:,1])
+
+        self.xmin_object = -self.radius_object_frame
+        self.xmax_object = self.radius_object_frame
+        self.ymin_object = -self.radius_object_frame
+        self.ymax_object = self.radius_object_frame
 
         def outward_round_interval(mini, maxi, step):
             # given an interval I=[mini, maxi] round it outward so that
@@ -137,7 +157,7 @@ class Discretization():
 
         free_states = []
         progressbar = ProgressBar(len(self.xs_object) * len(self.ys_object) * len(self.rs_object))
-        for i, (x, y, r) in enumerate(itertools.product(self.xs_object, self.ys_object, self.rs_object)):
+        for i, ((xi,x), (yi,y), (ri,r)) in enumerate(itertools.product(enumerate(self.xs_object), enumerate(self.ys_object), enumerate(self.rs_object))):
             self.domain.set_pose_of_jig_relative_to_object((x, y, r))
             
             x_try, y_try, r_try = self.domain.get_pose()
@@ -147,6 +167,7 @@ class Discretization():
                 #arbitrary amount of "not too much penetration"
                 if self.domain.penetration() < self.delta_xy:
                     free_states.append(self.domain.get_pose())
+                    self.free_states_grid.append((xi,yi,ri))
             progressbar.animate(i+1)
         
         self.free_states = np.array(free_states)
@@ -160,24 +181,27 @@ class Discretization():
         bottom_edge_states = []
         progressbar = ProgressBar(len(self.xs)*len(self.rs))
 
-        for xri, (x,r) in enumerate(itertools.product(self.xs, self.rs)):
+        for xri, ((xi,x),(ri,r)) in enumerate(itertools.product(enumerate(self.xs), enumerate(self.rs))):
             pose = self.domain.get_pose_against_edge(jig_edge_i=0, angle=r, displacement_along_edge=x)
             self.domain.set_pose(pose)
             if not self.domain.intersects_jig_which()[1]:
                 bottom_edge_states.append(pose)
+                self.bottom_states_grid.append((xi, ri))
             progressbar.animate(xri+1)
+        self.bottom_regular_grid_in_frame = "jig"
         print("bottom edge done")
 
         left_edge_states = []
         progressbar = ProgressBar(len(self.ys)*len(self.rs))
 
-        for yri, (y,r) in enumerate(itertools.product(self.ys, self.rs)):
+        for yri, ((yi, y), (ri, r)) in enumerate(itertools.product(enumerate(self.ys), enumerate(self.rs))):
             pose = self.domain.get_pose_against_edge(jig_edge_i=1, angle=r, displacement_along_edge=y)
             self.domain.set_pose(pose)
             if not self.domain.intersects_jig_which()[0]:
                 left_edge_states.append(pose)
+                self.left_states_grid.append((yi, ri))
             progressbar.animate(yri+1)
-
+        self.left_regular_grid_in_frame = "jig"
         print("left edge done")
 
         corner_states = []
@@ -187,9 +211,11 @@ class Discretization():
             self.domain.set_pose(pose)
             if self.domain.intersects_jig() and self.domain.penetration()<1e-4:
                 corner_states.append(pose)
+                self.corner_states_grid.append((ri,))
             else:
                 print("you shouldn't see this.")
             progressbar.animate(ri+1)
+        self.corner_regular_grid_in_frame = "jig"
         print("corner done")
 
         self.bottom_edge_states = np.array(bottom_edge_states)
@@ -201,19 +227,20 @@ class Discretization():
         if not self.state_is == "pose_of_object_in_jig":
             raise AssertionError()
 
-        self.regular_grid_in_frame = "jig"
+        self.free_regular_grid_in_frame = "jig"
 
         self.discretize_contact_manifolds()
 
         free_states = []
         progressbar = ProgressBar(len(self.xs) * len(self.ys) * len(self.rs))
-        for i, (x, y, r) in enumerate(itertools.product(self.xs, self.ys, self.rs)):
+        for i, ((xi,x), (yi,y), (ri,r)) in enumerate(itertools.product(enumerate(self.xs), enumerate(self.ys), enumerate(self.rs))):
             self.domain.restore()
             self.domain.move(x,y,r)
 
             #arbitrary amount of "not too much penetration"
             if self.domain.penetration() < self.delta_xy/2.0:
                 free_states.append(self.domain.get_pose())
+                self.free_states_grid.append((xi,yi,ri))
             progressbar.animate(i+1)
 
         self.free_states = np.array(free_states)
@@ -459,6 +486,8 @@ class PlanarPolygonObjectInCorner():
         return max(0.0-left_x, 0.0-bot_y)
 
     def get_pose_grounded_vertex(self, manipulandum_vertex_i, grounding_point, angle):
+        # get the pose of the object (its centroid), given that one of the vertices is grounded at grounding_point
+
         contact_vertex = self.vertex_list_original[manipulandum_vertex_i,:]
         contact_vertex_to_centroid = np.array([0,0])-contact_vertex
         
