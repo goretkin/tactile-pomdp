@@ -113,6 +113,8 @@ scale = [1, 1, 1.0/10.0]
 pm = False
 s = 0.0005
 
+interpolants = {}
+
 for view, t in zip([view1, view2], [g, f]):
     free_states = np.array(map(t, discretization.free_states))
     bottom_edge_states = np.array(map(t, discretization.bottom_edge_states))
@@ -133,6 +135,59 @@ for view, t in zip([view1, view2], [g, f]):
     cursor = gl.GLScatterPlotItem(pos=np.zeros((1,3)), color=(1.0,0.0,0.0,0.8), size=20*s, pxMode=pm)
     view.addItem(cursor)
     cursors[view] = cursor
+
+    interpolant = gl.GLScatterPlotItem(pos=np.zeros((1,3)), color=(0.0,0.0,1.0,0.8), size=10*s, pxMode=pm)
+    view.addItem(interpolant)
+    interpolants[view] = interpolant
+
+
+
+import matplotlib.pyplot as plt
+ax = plt.gca()
+ax.set_aspect(1)
+plt.show()
+
+
+import estimator_state_space_3d
+
+ss = estimator_state_space_3d.StateSpace()
+
+def plot_interpolant(configuration, frame):
+    affine = ss.interpolate(configuration, frame, manifold_projection="free", allow_extrapolation=True)
+
+    view1_points = []
+    view2_points = []
+
+    ax.clear()
+    po.set_pose(configuration)
+    plot_obj(po, ax)
+
+    for v, s in affine:
+        if s not in ss.states:
+            continue
+
+        p = ss.to_continuous(s) # in frame frame_states
+
+        view1_points.append(p)
+        view2_points.append(transform_between_jig_object(p, from_frame=frame_states, to_frame=frame_other_states))
+
+        po.set_pose(transform_between_jig_object(p, from_frame=frame_states, to_frame="jig"))
+
+        plot_obj(po, ax, kwline={"color":"green", "alpha":v})
+
+    ax.figure.canvas.draw()
+
+    if len(view1_points) > 0:
+        view1_points = np.array(view1_points) * scale
+        view2_points = np.array(view2_points) * scale
+
+        interpolants[view1].setData(pos=view1_points)
+        interpolants[view2].setData(pos=view2_points)
+
+        print(view1_points)
+    else:
+        print("no points to interp")
+
 
 
 class StateKeyClosure(object):
@@ -186,5 +241,11 @@ class StateKeyClosure(object):
         p2 = np.array([p2]) * scale
         cursors[view1].setData(pos=p1)
         cursors[view2].setData(pos=p2)
+
+        self.update()
+
+    def update(self):
+        plot_interpolant(self.state_jig, "jig")
+
 
 skc = StateKeyClosure()
