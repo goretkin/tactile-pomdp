@@ -100,6 +100,7 @@ class Discretization():
         else:
             self.discretize_regular_grid_object_frame()
             self.discretize_contact_manifolds()
+            self.make_states_be_pose_of_jig_in_object_frame()
             self.json_serialize()
 
     def make_states_be_pose_of_jig_in_object_frame(self):
@@ -166,8 +167,8 @@ class Discretization():
                 (not self.insist_on_rectangular_region_in_jig_frame and (x**2 + y**2 <= self.radius_object_frame**2))):
                 #arbitrary amount of "not too much penetration"
                 if self.domain.penetration() < self.delta_xy:
-                    free_states.append(self.domain.get_pose())
-                    self.free_states_grid.append((xi,yi,ri))
+                    free_states.append(self.domain.get_pose()) #these continuous coordinates are in the frame of "object with respect to jig"
+                    self.free_states_grid.append((xi,yi,ri)) # these grid coordinates are in frame of "jig with respect to object"
             progressbar.animate(i+1)
         
         self.free_states = np.array(free_states)
@@ -186,7 +187,7 @@ class Discretization():
             self.domain.set_pose(pose)
             if not self.domain.intersects_jig_which()[1]:
                 bottom_edge_states.append(pose)
-                self.bottom_states_grid.append((xi, ri))
+                self.bottom_states_grid.append((xi, ri)) #these grid coordinates are in the frame of "object with respect to jig"
             progressbar.animate(xri+1)
         self.bottom_regular_grid_in_frame = "jig"
         print("bottom edge done")
@@ -654,7 +655,20 @@ def jig_corner_pose_relative(obj_pose_in_jig_frame, obj_pose=(0,0,0),):
     x, y, angle = obj_pose_in_jig_frame
     x_, y_ = np.dot(np.array([0, 0])  - [x, y], rot_SO2(-angle))
     a_ = -angle
-    return (x_, y_, a_)
+    return np.array((x_, y_, a_))
+
+def transform_between_jig_object(configuration, from_frame, to_frame):
+    if from_frame == to_frame:
+        return configuration
+
+    if to_frame == "jig" and from_frame == "object":
+        return jig_corner_pose_relative(configuration)
+
+    if to_frame == "object" and from_frame == "jig":
+        x, y, angle = configuration
+        x_, y_ = np.dot(-np.array([x, y]), rot_SO2(-angle)) # this isn't algebraically the inverse. this is intuition. halp
+        a_ = -angle
+    return np.array((x_, y_, a_))
 
 
 def plot_jig_relative(obj, ax, obj_pose=(0,0,0), kwline={}, kwcontact={}):
