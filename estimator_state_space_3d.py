@@ -170,7 +170,7 @@ class StateSpace(object):
 
         configuration_projected = configuration_f[projection]
 
-        unrounded_lattice = (configuration_projected - offset) / delta[projection]
+        unrounded_lattice = (configuration_projected - offset[projection]) / delta[projection]
 
         assert len(unrounded_lattice) == manfold_d
 
