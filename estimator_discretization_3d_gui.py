@@ -162,6 +162,15 @@ def plot_interpolant(configuration, frame):
     po.set_pose(configuration)
     plot_obj(po, ax)
 
+    # plot jig
+    ax.axhline(0,)
+    ax.axvline(0,)
+
+    xw = discretization.xmax - discretization.xmin
+    yw = discretization.ymax - discretization.ymin
+    ax.set_xlim(discretization.xmin-0.1*xw, discretization.xmax+0.1*xw)
+    ax.set_ylim(discretization.ymin-0.1*xw, discretization.ymax+0.1*xw)
+
     for v, s in affine:
         if s not in ss.states:
             continue
