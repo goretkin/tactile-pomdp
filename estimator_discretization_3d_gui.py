@@ -6,7 +6,7 @@ pg.mkQApp()
 import pyqtgraph.opengl as gl
 
 from pyqtgraph import QtCore
-
+import PyQt4
 
 
 class GGViewWidget(gl.GLViewWidget):
@@ -172,7 +172,6 @@ def plot_interpolant(configuration, frame):
         view2_points.append(transform_between_jig_object(p, from_frame=frame_states, to_frame=frame_other_states))
 
         po.set_pose(transform_between_jig_object(p, from_frame=frame_states, to_frame="jig"))
-
         plot_obj(po, ax, kwline={"color":"green", "alpha":v})
 
     ax.figure.canvas.draw()
@@ -241,6 +240,9 @@ class StateKeyClosure(object):
         p2 = np.array([p2]) * scale
         cursors[view1].setData(pos=p1)
         cursors[view2].setData(pos=p2)
+
+        view1.opts["center"] = PyQt4.QtGui.QVector3D(*p1[0])
+        view2.opts["center"] = PyQt4.QtGui.QVector3D(*p2[0])
 
         self.update()
 
