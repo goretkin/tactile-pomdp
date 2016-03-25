@@ -152,8 +152,8 @@ import estimator_state_space_3d
 
 ss = estimator_state_space_3d.StateSpace()
 
-def plot_interpolant(configuration, frame):
-    affine = ss.interpolate(configuration, frame, manifold_projection="free", allow_extrapolation=True)
+def plot_interpolant(configuration, frame, manifold_projection):
+    affine = ss.interpolate(configuration, frame, manifold_projection=manifold_projection, allow_extrapolation=True)
 
     view1_points = []
     view2_points = []
@@ -214,6 +214,7 @@ class StateKeyClosure(object):
         self.cursor_max_speed = 0.05
         self.cursor_acceleration = 0.0001
 
+        self.manifold_projection = "free"
     def key_hold(self, view):
         if view not in [view1, view2]:
             print("Unregistered view got key event")
@@ -267,7 +268,7 @@ class StateKeyClosure(object):
         self.update()
 
     def update(self):
-        plot_interpolant(self.state_jig, "jig")
+        plot_interpolant(self.state_jig, "jig", manifold_projection=self.manifold_projection)
 
 
 skc = StateKeyClosure()
