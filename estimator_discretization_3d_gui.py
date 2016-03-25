@@ -28,12 +28,12 @@ class GGViewWidget(gl.GLViewWidget):
 
     def evalKeyState(self):
         speed = 2.0
+
+        # this should get called once when all keys are released too.
+        if hasattr(self, "key_hold_callback"):
+            self.key_hold_callback(self)
+
         if len(self.keysPressed) > 0:
-
-
-            if hasattr(self, "key_hold_callback"):
-                self.key_hold_callback(self)
-
             if GGViewWidget.mute_camera_movement_key not in self.keysPressed:
                 for key in self.keysPressed:
                     if key == QtCore.Qt.Key_Right:
@@ -201,6 +201,9 @@ class StateKeyClosure(object):
         self.last_keys = None
 
         self.state_jig = np.array([0.0,0.0,0.0])
+        self.cursor_speed = 0.0
+        self.cursor_max_speed = 0.05
+        self.cursor_acceleration = 0.0001
 
     def key_hold(self, view):
         if view not in [view1, view2]:
@@ -212,6 +215,7 @@ class StateKeyClosure(object):
         key_axes = [(Q.Key_S, Q.Key_W), (Q.Key_A, Q.Key_D), (Q.Key_Q, Q.Key_E)]
         move_delta = [-1, 1]
         v = []
+        v_is_zero = True
         for axis in key_axes:
             e = 0
 
@@ -219,10 +223,17 @@ class StateKeyClosure(object):
 
             for k in relevant_keys:
                 e += move_delta[axis.index(k)]
+                v_is_zero = False
             v.append(e)
 
+        if v_is_zero:
+            self.cursor_speed = 0.0
+        else:
+            # accelerate up to some limit
+            self.cursor_speed += self.cursor_acceleration
+            self.cursor_speed = min(self.cursor_max_speed, self.cursor_speed)
         # v contains 3-vector corresponding to key displacement
-        v = np.array(v) / scale # make cursor speed appear uniform
+        v = np.array(v) / scale # make cursor speed appear uniform along each configuration dimension
 
         delta_frame = None
         if view == view1:
@@ -231,7 +242,7 @@ class StateKeyClosure(object):
             delta_frame = frame_other_states
 
         s = transform_between_jig_object(self.state_jig, from_frame="jig", to_frame=delta_frame)
-        s += v * 0.005
+        s += v * self.cursor_speed
         self.state_jig  = transform_between_jig_object(s, from_frame=delta_frame, to_frame="jig")
 
         p1 = transform_between_jig_object(self.state_jig, from_frame="jig", to_frame=frame_states)
