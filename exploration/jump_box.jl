@@ -5,6 +5,30 @@ end
 
 using JuMP
 
+import JSON
+
+"""given symbols, produce a dictionary of symbol=>value"""
+macro symbol_dict(symbols...)
+	quote
+		Dict(
+			$(
+				[:($(QuoteNode(sym)) => $(esc(sym))) for sym in symbols]...
+			)
+		)
+	end
+end
+
+
+"""given JuMP decision variables, produce a dictionary of symbols=>optimal value"""
+macro value_dict(vars...)
+	rebindings = [:($(esc(var)) = getValue($(esc(var)))) for var in vars]
+	quote
+		let $(:($rebindings)...)
+			@symbol_dict($([esc(var) for var in vars]...))
+		end
+	end
+end
+
 
 vertices_zero = zeros(4,2)
 half_height = 2
@@ -21,7 +45,7 @@ using PyPlot
 ax = PyPlot.gca()
 ax[:set_aspect]("equal")
 
-function sim(t_max::Float64)
+function sim(t_max::Float64, ax=Void)
 	# simulate physics from time 0 to t_max
 	m = Model()
 
@@ -80,26 +104,38 @@ function sim(t_max::Float64)
 	@setObjective(m, Max, s*s0 + c*c0) # after all other objectives are met, also rotate the least amount possible.
 	solve(m)
 
-	#plot starting position of box
-	ax[:plot]( vcat(vx0, vx0[1]),  vcat(vy0, vy0[1]), "--")
+	if ax != Void
+		#plot starting position of box
+		ax[:plot]( vcat(vx0, vx0[1]),  vcat(vy0, vy0[1]), "--")
 
-	#center of starting position, and constraint axis/direction
-	ax[:plot](x0,  y0, "o")
-	tf = 10
-	ax[:plot]([x0, x0+m1*tf], [y0, y0+m2*tf], "--")
+		#center of starting position, and constraint axis/direction
+		ax[:plot](x0,  y0, "o")
+		tf = 10
+		ax[:plot]([x0, x0+m1*tf], [y0, y0+m2*tf], "--")
 
-	#plot resting position of box
-	let vx=getValue(vx), vy=getValue(vy)
-		ax[:plot]( vcat(vx, vx[1]),  vcat(vy, vy[1]), "-")
+		#plot resting position of box
+		let vx=getValue(vx), vy=getValue(vy)
+			ax[:plot]( vcat(vx, vx[1]),  vcat(vy, vy[1]), "-")
+		end
+
+		#center of resting position
+		let x=getValue(x), y=getValue(y)
+			ax[:plot](x,  y, "o")
+		end
+
+		ax[:plot]([0.0, 10.0], [0.0, 0.0], lw=2, color="k")
+		ax[:plot]([0.0, 0.0], [0.0, 10.0], lw=2, color="k")
 	end
 
-	#center of resting position
-	let x=getValue(x), y=getValue(y)
-		ax[:plot](x,  y, "o")
-	end
 
-	ax[:plot]([0.0, 10.0], [0.0, 0.0], lw=2, color="k")
-	ax[:plot]([0.0, 0.0], [0.0, 10.0], lw=2, color="k")
+	return @value_dict(t, vx, vy, x, y, c, s)
 
 end
 
+
+final_hit_time = sim(Inf)[:t]
+dicts = [sim(t) for t in linspace(0.0, final_hit_time, 10)]
+
+open("geometric_box_corner.json", "w") do file
+	write(file, JSON.json(dicts, 2))
+end
