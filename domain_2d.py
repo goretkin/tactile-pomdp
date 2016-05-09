@@ -1,3 +1,8 @@
+"""
+If you're trying to put a rectangle on an edge, this is the domain for you.
+There is no corner here. The code outside the constructor should work for any convex polygon.
+The edge is an infinitely long edge. The object can only ever be on one side of the edge
+"""
 import numpy as np
 import collections
 import itertools
